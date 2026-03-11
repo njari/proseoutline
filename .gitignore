@@ -1,0 +1,21 @@
+# Secrets
+.env
+
+# Python virtualenv
+venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Chroma vector store (large binary + embeddings, rebuild locally)
+chroma_db/
+
+# HuggingFace model cache (downloaded automatically)
+.cache/
+
+# Article outlines — each has its own git repo, exclude from outer repo
+outlines/
+
+# macOS
+.DS_Store
