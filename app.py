@@ -334,7 +334,7 @@ def setup():
                 else:
                     preview = "\n".join(f"  · {t}" for t in titles[:5])
                     result_label.set_text(
-                        f"Looks like we're ready to take this one :)\n\n"
+                        f"Looks like we're ready to take this forward :)\n\n"
                         f"Today's notes ({len(titles)} found):\n{preview}"
                     )
                     result_label.style(f"color:#059669; white-space:pre-line;")
