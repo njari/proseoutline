@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "proseoutline"
-version = "0.1.0"
+version = "0.1.1"
 description = "Graph-aware RAG over your Obsidian vault — generate versioned article outlines from your own notes"
 readme = "README.md"
 license = { text = "MIT" }
