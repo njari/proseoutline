@@ -239,5 +239,5 @@ def serve():
     ui.run(title="ProseOutline", port=8080, reload=False)
 
 
-if __name__ == "__main__":
+if __name__ in {"__main__", "__mp_main__"}:
     serve()
