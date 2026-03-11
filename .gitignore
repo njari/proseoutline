@@ -1,5 +1,6 @@
 # Secrets
 .env
+.pypirc
 
 # Python virtualenv
 venv/

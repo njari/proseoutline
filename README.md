@@ -10,17 +10,21 @@ Generate versioned article outlines from your own Obsidian notes using graph-awa
 - Surfaces topic ideas from today's daily notes
 - Saves outlines as git-versioned markdown files you can edit in a browser UI
 
-## One Command Install 
+## Install
 
-curl -Ls https://nubrajarial.com/install.sh | bash
+```bash
+curl -LsSf https://nubrajarial.com/install.sh | bash
+```
 
-## Install through pip
+That's it. The script installs [uv](https://github.com/astral-sh/uv) (if needed), fetches Python 3.11, and puts `proseoutline` on your PATH — no manual venv setup required.
+
+**Or via pip** (requires Python 3.11+ already installed):
 
 ```bash
 pip install proseoutline
 ```
 
-Requires Python 3.11+, Git, and an OpenAI API key.
+Requires Git and an OpenAI API key.
 
 ## Usage
 
