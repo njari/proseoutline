@@ -1,4 +1,9 @@
-from dotenv import load_dotenv
+import os
+from datetime import date
+from pathlib import Path
+
+import frontmatter as fm
+from dotenv import load_dotenv, set_key
 from nicegui import ui, app as nicegui_app, run
 
 from vault import build_graph, build_or_load_store, retrieve
@@ -11,6 +16,13 @@ from daily import get_todays_notes, suggest_topics
 
 load_dotenv()
 
+ENV_PATH = Path(__file__).parent / ".env"
+
+
+def is_configured() -> bool:
+    return bool(os.getenv("OPENAI_API_KEY")) and bool(os.getenv("DOCS_DIR"))
+
+
 # ---------------------------------------------------------------------------
 # Shared state — loaded once at startup
 # ---------------------------------------------------------------------------
@@ -19,6 +31,8 @@ state = {"store": None, "graph": None}
 
 @nicegui_app.on_startup
 async def startup():
+    if not is_configured():
+        return
     state["store"] = await run.io_bound(build_or_load_store)
     state["graph"] = await run.io_bound(build_graph)
 
@@ -39,23 +53,19 @@ BORDER  = "#bae6fd"   # subtle borders
 
 @ui.page("/")
 def index():
+    if not is_configured():
+        ui.navigate.to("/setup")
+        return
     # ---- global styles (font + button rounding + palette) ------------------
+    _shared_head()
     ui.add_head_html("""
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
     <style>
-      * { font-family: 'DM Sans', sans-serif !important; }
-      body { background: #f0f9ff !important; margin: 0; padding: 0; }
-      .q-btn  { border-radius: 10px !important; }
-      .q-field__control { border-radius: 10px !important; }
       .q-item { border-radius: 8px !important; }
       ::-webkit-scrollbar { width: 6px; }
       ::-webkit-scrollbar-track { background: #f0f9ff; }
       ::-webkit-scrollbar-thumb { background: #bae6fd; border-radius: 6px; }
     </style>
     """)
-    ui.colors(primary=NAVY, secondary=SKY, accent=SKY)
 
     ctx = {"slug": None, "alias": "main"}
 
@@ -233,6 +243,132 @@ def index():
                         ).classes("w-full").style(
                             f"background:{NAVY}; color:#ffffff;"
                         )
+
+
+def _shared_head():
+    ui.add_head_html("""
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
+    <style>
+      * { font-family: 'DM Sans', sans-serif !important; }
+      body { background: #f0f9ff !important; margin: 0; padding: 0; }
+      .q-btn  { border-radius: 10px !important; }
+      .q-field__control { border-radius: 10px !important; }
+    </style>
+    """)
+    ui.colors(primary=NAVY, secondary=SKY, accent=SKY)
+
+
+def _scan_vault_for_today(vault_path: str) -> list[str]:
+    """Return stems of notes created today in the given vault directory."""
+    today = date.today().isoformat()
+    skip_dirs = {"Daily", "Templates"}
+    titles = []
+    for md_file in Path(vault_path).rglob("*.md"):
+        if any(part in skip_dirs for part in md_file.parts):
+            continue
+        try:
+            post = fm.load(md_file)
+            if today in str(post.metadata.get("created", "")):
+                titles.append(md_file.stem)
+        except Exception:
+            continue
+    return titles
+
+
+@ui.page("/setup")
+def setup():
+    _shared_head()
+    ui.query("body").style("margin:0; padding:0;")
+
+    result_label: ui.label | None = None
+    save_btn: ui.button | None = None
+
+    with ui.column().classes("w-full h-screen items-center justify-center").style(
+        f"background:{SKY_XLT};"
+    ):
+        with ui.card().classes("p-10 gap-6 rounded-2xl shadow-lg").style(
+            f"width:480px; background:#ffffff; border: 1px solid {BORDER};"
+        ):
+            # Header
+            ui.label("ProseOutline").classes("text-3xl font-semibold").style(
+                f"color:{NAVY};"
+            )
+            ui.label(
+                "Connect your Obsidian vault to get started."
+            ).classes("text-sm").style("color:#64748b;")
+
+            ui.separator().style(f"background:{BORDER};")
+
+            # Inputs
+            vault_input = ui.input(
+                label="Obsidian vault folder path",
+                placeholder="/Users/you/Documents/MyVault",
+            ).classes("w-full")
+
+            api_input = ui.input(
+                label="OpenAI API key",
+                placeholder="sk-...",
+                password=False,
+                password_toggle_button=False,
+            ).classes("w-full")
+
+            # Verify button
+            async def on_verify():
+                vault_path = vault_input.value.strip()
+                if not vault_path or not Path(vault_path).is_dir():
+                    result_label.set_text("That path doesn't exist — double-check it.")
+                    result_label.style("color:#ef4444;")
+                    save_btn.disable()
+                    return
+                result_label.set_text("Scanning vault…")
+                result_label.style(f"color:#64748b;")
+                titles = await run.io_bound(_scan_vault_for_today, vault_path)
+                if not titles:
+                    result_label.set_text(
+                        "Vault readable — no notes created today (that's fine).\n"
+                        "You're good to go!"
+                    )
+                    result_label.style(f"color:#64748b; white-space:pre-line;")
+                else:
+                    preview = "\n".join(f"  · {t}" for t in titles[:5])
+                    result_label.set_text(
+                        f"Looks like we're ready to take this one :)\n\n"
+                        f"Today's notes ({len(titles)} found):\n{preview}"
+                    )
+                    result_label.style(f"color:#059669; white-space:pre-line;")
+                save_btn.enable()
+
+            ui.button("Verify vault", on_click=on_verify).props("unelevated").classes(
+                "w-full"
+            ).style(f"background:{SKY_LT}; color:{NAVY}; border:1px solid {BORDER};")
+
+            result_label = ui.label("").classes("text-sm").style("color:#64748b;")
+
+            ui.separator().style(f"background:{BORDER};")
+
+            # Save
+            def on_save():
+                vault_path = vault_input.value.strip()
+                api_key = api_input.value.strip()
+                if not vault_path or not api_key:
+                    result_label.set_text("Please fill in both fields before saving.")
+                    result_label.style("color:#ef4444;")
+                    return
+                ENV_PATH.touch()
+                set_key(str(ENV_PATH), "DOCS_DIR", vault_path)
+                set_key(str(ENV_PATH), "OPENAI_API_KEY", api_key)
+                result_label.set_text(
+                    "Config saved! Restart ProseOutline to begin."
+                )
+                result_label.style(f"color:{NAVY};")
+                save_btn.disable()
+
+            save_btn = ui.button("Save & Continue", on_click=on_save).props(
+                "unelevated"
+            ).classes("w-full").style(f"background:{NAVY}; color:#ffffff;")
+            save_btn.disable()
 
 
 def serve():
