@@ -19,3 +19,7 @@ outlines/
 
 # macOS
 .DS_Store
+
+# Build artifacts
+dist/
+*.egg-info/

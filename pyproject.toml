@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "proseoutline"
+version = "0.1.0"
+description = "Graph-aware RAG over your Obsidian vault — generate versioned article outlines from your own notes"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+dependencies = [
+    "langchain",
+    "langchain-community",
+    "langchain-openai",
+    "langchain-huggingface",
+    "langchain-chroma",
+    "langchain-text-splitters",
+    "obsidiantools",
+    "sentence-transformers",
+    "chromadb",
+    "python-frontmatter",
+    "python-dotenv",
+    "nicegui",
+    "networkx",
+]
+
+[project.scripts]
+proseoutline = "app:serve"
+proseoutline-cli = "main:main"
+
+[tool.setuptools]
+py-modules = ["app", "articles", "daily", "generator", "main", "vault"]
