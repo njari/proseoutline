@@ -8,8 +8,8 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 
-DOCS_DIR = "/Users/nubrajarial/Library/Mobile Documents/iCloud~md~obsidian/Documents/helterskelter/"
-CHROMA_DIR = "./chroma_db"
+DOCS_DIR = os.getenv("DOCS_DIR", "")
+CHROMA_DIR = str(Path(__file__).parent / "chroma_db")
 
 
 def build_graph():
