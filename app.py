@@ -141,19 +141,19 @@ def index():
     # -----------------------------------------------------------------------
 
     async def on_daily_ideas():
-        ideas_area.set_content("_Loading today's notes…_")
+        ideas_area.set_content("_Loading notes from the last 7 days…_")
         notes = await run.io_bound(get_todays_notes)
         count = len(notes)
         if count == 0:
-            notes_count_label.set_text("No notes found for today.")
+            notes_count_label.set_text("No notes found in the last 7 days.")
             notes_count_label.style("color:#94a3b8;")
             ideas_area.set_content("")
             return
         if count < 5:
-            notes_count_label.set_text(f"{count} note{'s' if count > 1 else ''} today · too little — you might be generating nonsense!")
+            notes_count_label.set_text(f"{count} note{'s' if count > 1 else ''} this week · too little — you might be generating nonsense!")
             notes_count_label.style("color:#f59e0b;")
         else:
-            notes_count_label.set_text(f"{count} notes found today")
+            notes_count_label.set_text(f"{count} notes found this week")
             notes_count_label.style(f"color:#64748b;")
         ideas = await run.io_bound(suggest_topics, notes)
         ideas_area.set_content(ideas)
