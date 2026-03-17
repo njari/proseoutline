@@ -1,7 +1,16 @@
 import re
 import subprocess
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+
+
+@dataclass
+class Article:
+    slug: str | None = None
+    alias: str = "main"
+    dir: Path | None = None
+    branches: list[str] = field(default_factory=list)
 
 OUTLINES_DIR = Path(__file__).parent / "outlines"
 
@@ -34,7 +43,7 @@ def init_article_repo(article_dir: Path):
         git_run("commit", "-m", "init", cwd=article_dir)
 
 
-def list_articles(outlines_dir: Path) -> list[dict]:
+def list_articles(outlines_dir: Path) -> list[Article]:
     """Each subdirectory with a .git is an article."""
     outlines_dir.mkdir(exist_ok=True)
     articles = []
@@ -49,7 +58,7 @@ def list_articles(outlines_dir: Path) -> list[dict]:
             ]
         except RuntimeError:
             branches = ["main"]
-        articles.append({"slug": slug, "dir": article_dir, "branches": branches})
+        articles.append(Article(slug=slug, dir=article_dir, branches=branches))
     return articles
 
 

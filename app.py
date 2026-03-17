@@ -1,18 +1,16 @@
 import os
-from datetime import date
 from pathlib import Path
 
-import frontmatter as fm
 from dotenv import load_dotenv, set_key
 from nicegui import ui, app as nicegui_app, run
 
 from vault import retrieve
 from generator import stream_outline
 from articles import (
-    OUTLINES_DIR, slugify, list_articles,
+    OUTLINES_DIR, Article, slugify, list_articles,
     read_article, commit_edit, init_article_repo,
 )
-from daily import get_todays_notes, suggest_topics
+from daily import get_recent_notes, suggest_topics, scan_vault_titles
 import state
 from state import KnowledgeMap, BuildStatus
 from theme import (
@@ -74,7 +72,7 @@ def index():
     </style>
     """)
 
-    ctx = {"slug": None, "alias": "main"}
+    article = Article()
 
     editor: ui.codemirror | None = None
     article_label: ui.label | None = None
@@ -92,14 +90,14 @@ def index():
         articles_list.clear()
         with articles_list:
             for a in list_articles(OUTLINES_DIR):
-                slug = a["slug"]
+                slug = a.slug
                 ui.item(slug, on_click=lambda s=slug: load_article(s)).classes(
                     "cursor-pointer rounded-lg text-sm font-mono"
                 ).style(f"color:{PRIMARY}; transition: background 0.15s;")
 
     def load_article(slug: str):
-        ctx["slug"] = slug
-        ctx["alias"] = "main"
+        article.slug = slug
+        article.alias = "main"
         try:
             content = read_article(OUTLINES_DIR, slug, "main")
         except RuntimeError:
@@ -113,10 +111,10 @@ def index():
     # -----------------------------------------------------------------------
 
     async def on_save():
-        if not ctx["slug"]:
+        if not article.slug:
             status.set_text("Nothing loaded.")
             return
-        slug, content = ctx["slug"], editor.value
+        slug, content = article.slug, editor.value
         commit = await run.io_bound(commit_edit, OUTLINES_DIR, slug, "main", content)
         status.set_text(f"Saved · {commit}")
 
@@ -130,8 +128,8 @@ def index():
             status.set_text("Enter a topic first.")
             return
         slug = slugify(topic)
-        ctx["slug"] = slug
-        ctx["alias"] = "main"
+        article.slug = slug
+        article.alias = "main"
         article_label.set_text(slug)
         await run.io_bound(init_article_repo, OUTLINES_DIR / slug)
         status.set_text(f"Retrieving notes for '{topic}'…")
@@ -149,7 +147,7 @@ def index():
 
     async def on_daily_ideas():
         ideas_area.set_content("_Loading notes from the last 7 days…_")
-        notes = await run.io_bound(get_todays_notes)
+        notes = await run.io_bound(get_recent_notes, 7)
         count = len(notes)
         if count == 0:
             notes_count_label.set_text("No notes found in the last 7 days.")
@@ -291,22 +289,6 @@ def _shared_head():
     ui.colors(primary=PRIMARY, secondary=ACCENT, accent=ACCENT)
 
 
-def _scan_vault_for_today(vault_path: str) -> list[str]:
-    """Return stems of notes created today in the given vault directory."""
-    today = date.today().isoformat()
-    skip_dirs = {"Daily", "Templates"}
-    titles = []
-    for md_file in Path(vault_path).rglob("*.md"):
-        if any(part in skip_dirs for part in md_file.parts):
-            continue
-        try:
-            post = fm.load(md_file)
-            if today in str(post.metadata.get("created", "")):
-                titles.append(md_file.stem)
-        except Exception:
-            continue
-    return titles
-
 
 @ui.page(PAGE_SETUP)
 def setup():
@@ -357,7 +339,7 @@ def setup():
                     return
                 result_label.set_text("Scanning vault…")
                 result_label.style(f"color:{TEXT_MUTED};")
-                titles = await run.io_bound(_scan_vault_for_today, vault_path)
+                titles = await run.io_bound(scan_vault_titles, vault_path, 2)
                 if not titles:
                     result_label.set_text(
                         "Vault readable — no notes created today (that's fine).\n"

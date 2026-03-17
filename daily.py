@@ -1,10 +1,9 @@
 """
 daily.py — surface article topic ideas from recent Obsidian notes.
 
-Replicates the Daily.base filter: notes whose `created` frontmatter date
-falls within the last 7 days. Keeps topic suggestion separate from outline
-generation — call suggest_topics() to get ideas, then hand a chosen topic
-to vault.retrieve() + generator.generate_outline().
+Notes are matched by their `created` frontmatter date falling within a
+rolling window of N days ending today. Call scan_notes(days=N) to
+fetch notes, then pass them to suggest_topics() for LLM-generated ideas.
 """
 
 from datetime import date, timedelta
@@ -27,47 +26,80 @@ Rules:
 - Output as a numbered list: topic title + one-sentence angle
 - Do not add topics that aren't supported by the notes""")
 
+SKIP_DIRS = {"Daily", "Templates"}
 
-def get_todays_notes(date_str: str | None = None) -> list[dict]:
-    """
-    Return notes whose `created` frontmatter falls within the last 7 days.
-    Mirrors the Daily.base filter logic.
-    Excludes Daily/ and Templates/ folders.
-    """
-    today = date.fromisoformat(date_str) if date_str else date.today()
-    cutoff = today - timedelta(days=7)
-    date_range = {(cutoff + timedelta(days=i)).isoformat() for i in range(8)}
+_ALL_FIELDS = ("name", "path", "content", "metadata")
 
-    docs_path = Path(DOCS_DIR)
-    skip_dirs = {"Daily", "Templates"}
+
+def _date_range(days: int) -> set[str]:
+    """ISO date strings for the last `days` days, ending today (inclusive)."""
+    today = date.today()
+    return {(today - timedelta(days=i)).isoformat() for i in range(days)}
+
+
+def scan_notes(
+    days: int = 7,
+    vault_path: str | None = None,
+    return_params: dict | None = None,
+) -> list[dict]:
+    """
+    Scan vault for notes created within the last `days` days.
+
+    Args:
+        days: Rolling window of days ending today (inclusive).
+        vault_path: Path to scan. Defaults to global DOCS_DIR.
+        return_params: Dict controlling which fields to include per record.
+            {"fields": ["name", "path", "content", "metadata"]}
+            Omit or pass None to include all fields.
+
+    Returns:
+        list of dicts, each containing the requested fields.
+    """
+    fields = set(return_params.get("fields", _ALL_FIELDS)) if return_params else set(_ALL_FIELDS)
+    date_range = _date_range(days)
+    root = Path(vault_path) if vault_path else Path(DOCS_DIR)
     results = []
 
-    for md_file in docs_path.rglob("*.md"):
-        if any(part in skip_dirs for part in md_file.parts):
+    for md_file in root.rglob("*.md"):
+        if any(part in SKIP_DIRS for part in md_file.parts):
             continue
         try:
             post = frontmatter.load(md_file)
             created = str(post.metadata.get("created", ""))
-            if any(d in created for d in date_range):
-                results.append({
-                    "name": md_file.stem,
-                    "path": str(md_file),
-                    "content": post.content.strip(),
-                    "metadata": post.metadata,
-                })
+            if not any(d in created for d in date_range):
+                continue
+            record: dict = {}
+            if "name"     in fields: record["name"]     = md_file.stem
+            if "path"     in fields: record["path"]     = str(md_file)
+            if "content"  in fields: record["content"]  = post.content.strip()
+            if "metadata" in fields: record["metadata"] = post.metadata
+            results.append(record)
         except Exception:
-            continue  # skip unparseable files
+            continue
 
     return results
 
 
+def get_recent_notes(days: int = 7) -> list[dict]:
+    """Return full note records from the last `days` days in DOCS_DIR."""
+    return scan_notes(days=days)
+
+
+def scan_vault_titles(vault_path: str, days: int = 1) -> list[str]:
+    """Return stems of notes created within the last `days` days in vault_path."""
+    return [
+        r["name"]
+        for r in scan_notes(days=days, vault_path=vault_path, return_params={"fields": ["name"]})
+    ]
+
+
 def suggest_topics(notes: list[dict]) -> str:
     """
-    Given today's notes, ask GPT-4o to suggest article topic ideas.
+    Given recent notes, ask GPT-4o to suggest article topic ideas.
     Returns the raw LLM response string.
     """
     if not notes:
-        return "No notes found in the last 7 days."
+        return "No notes found in the selected date range."
 
     context = "\n\n---\n\n".join(
         f"[[{n['name']}]]\n{n['content']}" for n in notes if n["content"]
