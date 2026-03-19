@@ -174,6 +174,7 @@ def index():
                             )
                         editor = ui.codemirror(
                             value="", language="markdown",
+                            line_wrapping=True,
                         ).classes("w-full flex-1").style(f"background:{SURFACE};")
 
                 with inner.after:
