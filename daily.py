@@ -13,7 +13,7 @@ import frontmatter
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 
-from vault import DOCS_DIR
+import settings
 
 TOPICS_PROMPT = SystemMessage(content="""You are a writing assistant reviewing a person's notes from today.
 
@@ -57,7 +57,7 @@ def scan_notes(
     """
     fields = set(return_params.get("fields", _ALL_FIELDS)) if return_params else set(_ALL_FIELDS)
     date_range = _date_range(days)
-    root = Path(vault_path) if vault_path else Path(DOCS_DIR)
+    root = Path(vault_path) if vault_path else Path(settings.vault_dir())
     results = []
 
     for md_file in root.rglob("*.md"):
@@ -78,19 +78,6 @@ def scan_notes(
             continue
 
     return results
-
-
-def get_recent_notes(days: int = 7) -> list[dict]:
-    """Return full note records from the last `days` days in DOCS_DIR."""
-    return scan_notes(days=days)
-
-
-def scan_vault_titles(vault_path: str, days: int = 1) -> list[str]:
-    """Return stems of notes created within the last `days` days in vault_path."""
-    return [
-        r["name"]
-        for r in scan_notes(days=days, vault_path=vault_path, return_params={"fields": ["name"]})
-    ]
 
 
 def suggest_topics(notes: list[dict]) -> str:

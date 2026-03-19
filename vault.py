@@ -8,12 +8,12 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 
-DOCS_DIR = os.getenv("DOCS_DIR", "")
+import settings
 CHROMA_DIR = str(Path(__file__).parent / "chroma_db")
 
 
 def build_graph():
-    vault = otools.api.Vault(Path(DOCS_DIR)).connect().gather()
+    vault = otools.api.Vault(Path(settings.vault_dir())).connect().gather()
     return vault.graph
 
 
@@ -21,7 +21,7 @@ def build_or_load_store():
     embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
     if os.path.exists(CHROMA_DIR):
         return Chroma(persist_directory=CHROMA_DIR, embedding_function=embeddings)
-    loader = ObsidianLoader(path=DOCS_DIR, collect_metadata=True)
+    loader = ObsidianLoader(path=settings.vault_dir(), collect_metadata=True)
     docs = loader.load()
     splitter = RecursiveCharacterTextSplitter(chunk_size=200, chunk_overlap=20, add_start_index=True)
     splits = splitter.split_documents(docs)
@@ -39,7 +39,7 @@ def expand_with_graph(results, store, graph, hops=1):
         ego = nx.ego_graph(graph.to_undirected(), note_name, radius=hops)
         neighbors = set(ego.nodes) - {note_name}
         for neighbor in neighbors:
-            neighbor_path = os.path.join(DOCS_DIR, neighbor + ".md")
+            neighbor_path = os.path.join(settings.vault_dir(), neighbor + ".md")
             if neighbor_path in seen_sources:
                 continue
             seen_sources.add(neighbor_path)

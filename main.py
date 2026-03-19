@@ -5,14 +5,14 @@ from dotenv import load_dotenv
 from vault import build_graph, build_or_load_store, retrieve
 from generator import generate_outline
 from articles import OUTLINES_DIR, slugify, list_articles, save_outline, show_article
-from daily import get_recent_notes, suggest_topics
+from daily import scan_notes, suggest_topics
 
 load_dotenv()
 
 
 def run_daily_ideas(store, graph):
     """Surface topic ideas from today's notes, then optionally generate an outline."""
-    notes = get_recent_notes(days=7)
+    notes = scan_notes(days=7)
 
     if not notes:
         print("\nNo notes found in the last 7 days.")

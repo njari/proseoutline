@@ -1,7 +1,5 @@
-import os
 from pathlib import Path
 
-from dotenv import load_dotenv, set_key
 from nicegui import ui, app as nicegui_app, run
 
 from vault import retrieve
@@ -10,28 +8,19 @@ from articles import (
     OUTLINES_DIR, Article, slugify, list_articles,
     read_article, commit_edit, init_article_repo,
 )
-from daily import get_recent_notes, suggest_topics, scan_vault_titles
+from daily import scan_notes, suggest_topics
 import state
 from state import KnowledgeMap, BuildStatus
 from theme import (
     PRIMARY, ACCENT, SURFACE, BG_PAGE, BG_PANEL, BORDER,
     TEXT_BODY, TEXT_MUTED, TEXT_SUBTLE, SUCCESS, WARNING, ERROR,
 )
-
-load_dotenv()
-
-ENV_PATH = Path(__file__).parent / ".env"
-OPEN_API_KEY = "OPENAI_API_KEY"
-VAULT_DIR = "DOCS_DIR"
-
-
-def is_configured() -> bool:
-    return bool(os.getenv(OPEN_API_KEY)) and bool(os.getenv(VAULT_DIR))
+import settings
 
 
 @nicegui_app.on_startup
 async def startup():
-    if not is_configured():
+    if not settings.is_configured():
         return
 
     def on_status(s: BuildStatus) -> None:
@@ -55,7 +44,7 @@ PAGE_SETUP   = "/setup"
 
 @ui.page(PAGE_INDEX)
 def index():
-    if not is_configured():
+    if not settings.is_configured():
         ui.navigate.to(PAGE_SETUP)
         return
     if state.knowledge_map is None:
@@ -147,7 +136,7 @@ def index():
 
     async def on_daily_ideas():
         ideas_area.set_content("_Loading notes from the last 7 days…_")
-        notes = await run.io_bound(get_recent_notes, 7)
+        notes = await run.io_bound(scan_notes, 7)
         count = len(notes)
         if count == 0:
             notes_count_label.set_text("No notes found in the last 7 days.")
@@ -318,7 +307,7 @@ def setup():
             vault_input = ui.input(
                 label="Obsidian vault folder path",
                 placeholder="/Users/you/Documents/MyVault",
-                value=os.getenv(VAULT_DIR, ""),
+                value=settings.vault_dir(),
             ).classes("w-full")
 
             api_input = ui.input(
@@ -326,7 +315,7 @@ def setup():
                 placeholder="sk-...",
                 password=False,
                 password_toggle_button=False,
-                value=os.getenv(OPEN_API_KEY, ""),
+                value=settings.api_key(),
             ).classes("w-full")
 
             # Verify button
@@ -339,7 +328,8 @@ def setup():
                     return
                 result_label.set_text("Scanning vault…")
                 result_label.style(f"color:{TEXT_MUTED};")
-                titles = await run.io_bound(scan_vault_titles, vault_path, 2)
+                results = await run.io_bound(scan_notes, 2, vault_path, {"fields": ["name"]})
+                titles = [r["name"] for r in results]
                 if not titles:
                     result_label.set_text(
                         "Vault readable — no notes created today (that's fine).\n"
@@ -371,9 +361,7 @@ def setup():
                     result_label.set_text("Please fill in both fields before saving.")
                     result_label.style(f"color:{ERROR};")
                     return
-                ENV_PATH.touch()
-                set_key(str(ENV_PATH), VAULT_DIR, vault_path)
-                set_key(str(ENV_PATH), OPEN_API_KEY, api_key)
+                settings.save(vault_path, api_key)
                 result_label.set_text(
                     "Config saved! Restart ProseOutline to begin."
                 )
@@ -383,7 +371,7 @@ def setup():
             save_btn = ui.button("Save & Continue", on_click=on_save).props(
                 "unelevated"
             ).classes("w-full").style(f"background:{PRIMARY}; color:{SURFACE};")
-            if not (os.getenv(VAULT_DIR) and os.getenv(OPEN_API_KEY)):
+            if not settings.is_configured():
                 save_btn.disable()
 
 
