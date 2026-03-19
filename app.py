@@ -3,10 +3,10 @@ from pathlib import Path
 from nicegui import ui, app as nicegui_app, run
 
 from vault import retrieve
-from generator import stream_outline
+from generator import stream_outline, revise_outline
 from articles import (
     OUTLINES_DIR, Article, slugify, list_articles,
-    read_article, commit_edit, init_article_repo,
+    commit_edit, init_article_repo, current_branch,
 )
 from daily import scan_notes, suggest_topics
 import state
@@ -29,7 +29,6 @@ async def startup():
     state.knowledge_map = await KnowledgeMap.build(on_status)
 
 
-
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -39,7 +38,85 @@ PAGE_SETUP   = "/setup"
 
 
 # ---------------------------------------------------------------------------
-# UI
+# Section builders — pure layout, no event logic
+# Each is called within the active NiceGUI `with` context.
+# Returns a dict of interactive widget refs for the caller to wire up.
+# ---------------------------------------------------------------------------
+
+def _section_header(text: str):
+    """Reusable uppercase section label."""
+    ui.label(text).classes("text-sm font-semibold tracking-wide").style(
+        f"color:{PRIMARY}; letter-spacing:0.06em; text-transform:uppercase;"
+    )
+
+
+def _section_divider():
+    ui.separator().style(f"background:{BORDER};")
+
+
+def _section_daily_ideas() -> dict:
+    _section_header("Today's Ideas")
+    btn = ui.button("Suggest from daily notes").props("unelevated").classes("w-full").style(
+        f"background:{BG_PANEL}; color:{PRIMARY}; border: 1px solid {BORDER};"
+    )
+    count_label = ui.label("").classes("text-xs")
+    ideas_area = ui.markdown("").classes(
+        "text-sm w-full overflow-auto flex-1 p-3 rounded-xl"
+    ).style(
+        f"background:{SURFACE}; border: 1px solid {BORDER}; color:{TEXT_BODY}; min-height:120px;"
+    )
+    return {"btn": btn, "count_label": count_label, "ideas_area": ideas_area}
+
+
+def _section_generate() -> dict:
+    _section_header("Generate Outline")
+    topic_input = ui.input(placeholder="Article topic…").classes("w-full").style(
+        f"color:{PRIMARY};"
+    )
+    btn = ui.button("Generate").props("unelevated").classes("w-full").style(
+        f"background:{PRIMARY}; color:{SURFACE};"
+    )
+    return {"btn": btn, "topic_input": topic_input}
+
+
+def _section_article_actions() -> dict:
+    """Hidden by default — revealed on article double-click."""
+    root = ui.column().classes("w-full gap-3")
+    with root:
+        _section_divider()
+        _section_header("Article Actions")
+        feedback = ui.textarea(placeholder="What's not working? Be specific.").classes(
+            "w-full"
+        ).style(f"color:{PRIMARY}; min-height:80px;")
+        improve_btn = ui.button("Improve with feedback").props("unelevated").classes(
+            "w-full"
+        ).style(f"background:{ACCENT}; color:{SURFACE};")
+        direction_btn = ui.button("Explore new Direction").props("unelevated").classes(
+            "w-full"
+        ).style(f"background:{BG_PANEL}; color:{PRIMARY}; border: 1px solid {BORDER};")
+    root.set_visibility(False)
+    return {
+        "root": root,
+        "feedback": feedback,
+        "improve_btn": improve_btn,
+        "direction_btn": direction_btn,
+    }
+
+
+def _build_article_list(articles_list, load_cb, open_actions_cb):
+    """Populate the articles list. Call again to refresh."""
+    articles_list.clear()
+    with articles_list:
+        for a in list_articles(OUTLINES_DIR):
+            slug = a.slug
+            item = ui.item(slug, on_click=lambda s=slug: load_cb(s)).classes(
+                "cursor-pointer rounded-lg text-sm font-mono"
+            ).style(f"color:{PRIMARY}; transition: background 0.15s;")
+            item.on("dblclick", lambda e, s=slug: open_actions_cb(s))
+
+
+# ---------------------------------------------------------------------------
+# Pages
 # ---------------------------------------------------------------------------
 
 @ui.page(PAGE_INDEX)
@@ -50,7 +127,7 @@ def index():
     if state.knowledge_map is None:
         ui.navigate.to(PAGE_LOADING)
         return
-    # ---- global styles (font + button rounding + palette) ------------------
+
     _shared_head()
     ui.add_head_html(f"""
     <style>
@@ -62,57 +139,83 @@ def index():
     """)
 
     article = Article()
+    ui.query("body").style("margin:0; padding:0;")
 
-    editor: ui.codemirror | None = None
-    article_label: ui.label | None = None
-    status: ui.label | None = None
-    ideas_area: ui.markdown | None = None
-    notes_count_label: ui.label | None = None
-    topic_input: ui.input | None = None
-    articles_list: ui.list | None = None
+    # --- Layout skeleton ---
+    with ui.splitter(value=18).classes("w-full h-screen") as outer:
 
-    # -----------------------------------------------------------------------
-    # File explorer helpers
-    # -----------------------------------------------------------------------
+        with outer.before:
+            with ui.column().classes("w-full h-full p-4 gap-2").style(
+                f"background:{BG_PANEL}; border-right: 1px solid {BORDER};"
+            ):
+                ui.label("Articles").classes("text-sm font-semibold tracking-wide").style(
+                    f"color:{PRIMARY}; letter-spacing:0.06em; text-transform:uppercase;"
+                )
+                articles_list = ui.list().classes("w-full gap-1")
 
-    def refresh_articles():
-        articles_list.clear()
-        with articles_list:
-            for a in list_articles(OUTLINES_DIR):
-                slug = a.slug
-                ui.item(slug, on_click=lambda s=slug: load_article(s)).classes(
-                    "cursor-pointer rounded-lg text-sm font-mono"
-                ).style(f"color:{PRIMARY}; transition: background 0.15s;")
+        with outer.after:
+            with ui.splitter(value=72).classes("w-full h-full") as inner:
 
-    def load_article(slug: str):
+                with inner.before:
+                    with ui.column().classes("w-full h-full gap-0").style(
+                        f"background:{SURFACE};"
+                    ):
+                        with ui.row().classes("w-full items-center px-5 py-2 gap-3").style(
+                            f"min-height:52px; border-bottom: 1px solid {BORDER}; background:{SURFACE};"
+                        ):
+                            article_label = ui.label("").classes(
+                                "text-sm font-mono flex-1 truncate"
+                            ).style(f"color:{PRIMARY};")
+                            status = ui.label("").classes("text-xs").style(
+                                f"color:{TEXT_MUTED};"
+                            )
+                            save_btn = ui.button("Save").props("dense unelevated").style(
+                                f"background:{PRIMARY}; color:{SURFACE}; padding: 4px 18px;"
+                            )
+                        editor = ui.codemirror(
+                            value="", language="markdown",
+                        ).classes("w-full flex-1").style(f"background:{SURFACE};")
+
+                with inner.after:
+                    with ui.column().classes("w-full h-full p-5 gap-4").style(
+                        f"background:{BG_PAGE}; border-left: 1px solid {BORDER};"
+                    ):
+                        daily_w    = _section_daily_ideas()
+                        _section_divider()
+                        gen_w      = _section_generate()
+                        action_w   = _section_article_actions()
+
+    # --- Event handlers (close over layout widget refs) ---
+
+    async def load_article(slug: str):
         article.slug = slug
-        article.alias = "main"
+        article.alias = await run.io_bound(current_branch, OUTLINES_DIR, slug)
+        outline_path = OUTLINES_DIR / slug / "outline.md"
         try:
-            content = read_article(OUTLINES_DIR, slug, "main")
-        except RuntimeError:
+            content = await run.io_bound(outline_path.read_text, "utf-8")
+        except (FileNotFoundError, OSError):
             content = ""
         editor.value = content
         article_label.set_text(slug)
         status.set_text(f"Loaded {slug}")
 
-    # -----------------------------------------------------------------------
-    # Save — Flow 3
-    # -----------------------------------------------------------------------
+    async def open_actions(slug: str):
+        await load_article(slug)
+        action_w["feedback"].value = ""
+        action_w["root"].set_visibility(True)
+
+    def refresh_articles():
+        _build_article_list(articles_list, load_article, open_actions)
 
     async def on_save():
         if not article.slug:
             status.set_text("Nothing loaded.")
             return
-        slug, content = article.slug, editor.value
-        commit = await run.io_bound(commit_edit, OUTLINES_DIR, slug, "main", content)
+        commit = await run.io_bound(commit_edit, OUTLINES_DIR, article.slug, "main", editor.value)
         status.set_text(f"Saved · {commit}")
 
-    # -----------------------------------------------------------------------
-    # Generate — Flow 2
-    # -----------------------------------------------------------------------
-
     async def on_generate():
-        topic = topic_input.value.strip()
+        topic = gen_w["topic_input"].value.strip()
         if not topic:
             status.set_text("Enter a topic first.")
             return
@@ -130,113 +233,64 @@ def index():
         status.set_text("Done — edit and save when ready.")
         refresh_articles()
 
-    # -----------------------------------------------------------------------
-    # Daily ideas — Flow 1
-    # -----------------------------------------------------------------------
-
     async def on_daily_ideas():
-        ideas_area.set_content("_Loading notes from the last 7 days…_")
+        daily_w["ideas_area"].set_content("_Loading notes from the last 7 days…_")
         notes = await run.io_bound(scan_notes, 7)
         count = len(notes)
         if count == 0:
-            notes_count_label.set_text("No notes found in the last 7 days.")
-            notes_count_label.style(f"color:{TEXT_SUBTLE};")
-            ideas_area.set_content("")
+            daily_w["count_label"].set_text("No notes found in the last 7 days.")
+            daily_w["count_label"].style(f"color:{TEXT_SUBTLE};")
+            daily_w["ideas_area"].set_content("")
             return
         if count < 5:
-            notes_count_label.set_text(f"{count} note{'s' if count > 1 else ''} this week · too little — you might be generating nonsense!")
-            notes_count_label.style(f"color:{WARNING};")
+            daily_w["count_label"].set_text(
+                f"{count} note{'s' if count > 1 else ''} this week · too little — you might be generating nonsense!"
+            )
+            daily_w["count_label"].style(f"color:{WARNING};")
         else:
-            notes_count_label.set_text(f"{count} notes found this week")
-            notes_count_label.style(f"color:{TEXT_MUTED};")
+            daily_w["count_label"].set_text(f"{count} notes found this week")
+            daily_w["count_label"].style(f"color:{TEXT_MUTED};")
         ideas = await run.io_bound(suggest_topics, notes)
-        ideas_area.set_content(ideas)
+        daily_w["ideas_area"].set_content(ideas)
 
-    # -----------------------------------------------------------------------
-    # Layout
-    # -----------------------------------------------------------------------
-    ui.query("body").style("margin:0; padding:0;")
+    async def on_improve():
+        feedback = action_w["feedback"].value.strip()
+        if not feedback or not article.slug:
+            status.set_text("Load an article and enter feedback first.")
+            return
+        docs = await run.io_bound(
+            retrieve, state.knowledge_map.store, state.knowledge_map.graph, article.slug
+        )
+        current = editor.value
+        status.set_text("Revising outline…")
+        editor.value = ""
+        async for chunk in revise_outline(current, feedback, docs):
+            editor.value += chunk
+        action_w["feedback"].value = ""
+        status.set_text("Revised — edit and save when ready.")
 
-    with ui.splitter(value=18).classes("w-full h-screen") as outer:
+    async def on_new_direction():
+        if not article.slug:
+            status.set_text("Load an article first.")
+            return
+        topic = article.slug.replace("-", " ")
+        docs = await run.io_bound(
+            retrieve, state.knowledge_map.store, state.knowledge_map.graph, topic
+        )
+        status.set_text("Exploring new direction…")
+        editor.value = ""
+        async for chunk in stream_outline(topic, docs):
+            editor.value += chunk
+        status.set_text("New direction ready — edit and save when ready.")
 
-        # LEFT — article list
-        with outer.before:
-            with ui.column().classes("w-full h-full p-4 gap-2").style(
-                f"background:{BG_PANEL}; border-right: 1px solid {BORDER};"
-            ):
-                ui.label("Articles").classes("text-sm font-semibold tracking-wide").style(
-                    f"color:{PRIMARY}; letter-spacing:0.06em; text-transform:uppercase;"
-                )
-                articles_list = ui.list().classes("w-full gap-1")
-                refresh_articles()
+    # --- Wire buttons to handlers ---
+    save_btn.on("click", on_save)
+    daily_w["btn"].on("click", on_daily_ideas)
+    gen_w["btn"].on("click", on_generate)
+    action_w["improve_btn"].on("click", on_improve)
+    action_w["direction_btn"].on("click", on_new_direction)
 
-        with outer.after:
-            with ui.splitter(value=72).classes("w-full h-full") as inner:
-
-                # CENTER — editor
-                with inner.before:
-                    with ui.column().classes("w-full h-full gap-0").style(
-                        f"background:{SURFACE};"
-                    ):
-                        # Toolbar
-                        with ui.row().classes("w-full items-center px-5 py-2 gap-3").style(
-                            f"min-height:52px; border-bottom: 1px solid {BORDER}; background:{SURFACE};"
-                        ):
-                            article_label = ui.label("").classes(
-                                "text-sm font-mono flex-1 truncate"
-                            ).style(f"color:{PRIMARY};")
-                            status = ui.label("").classes("text-xs").style(
-                                f"color:{TEXT_MUTED};"
-                            )
-                            ui.button("Save", on_click=on_save).props(
-                                "dense unelevated"
-                            ).style(
-                                f"background:{PRIMARY}; color:{SURFACE}; padding: 4px 18px;"
-                            )
-
-                        editor = ui.codemirror(
-                            value="", language="markdown",
-                        ).classes("w-full flex-1").style(
-                            f"background:{SURFACE};"
-                        )
-
-                # RIGHT — generate panel
-                with inner.after:
-                    with ui.column().classes("w-full h-full p-5 gap-4").style(
-                        f"background:{BG_PAGE}; border-left: 1px solid {BORDER};"
-                    ):
-                        # Flow 1 — Today's ideas
-                        ui.label("Today's Ideas").classes("text-sm font-semibold tracking-wide").style(
-                            f"color:{PRIMARY}; letter-spacing:0.06em; text-transform:uppercase;"
-                        )
-                        ui.button(
-                            "Suggest from daily notes", on_click=on_daily_ideas
-                        ).props("unelevated").classes("w-full").style(
-                            f"background:{BG_PANEL}; color:{PRIMARY}; border: 1px solid {BORDER};"
-                        )
-                        notes_count_label = ui.label("").classes("text-xs")
-                        ideas_area = ui.markdown("").classes(
-                            "text-sm w-full overflow-auto flex-1 p-3 rounded-xl"
-                        ).style(
-                            f"background:{SURFACE}; border: 1px solid {BORDER}; color:{TEXT_BODY}; min-height:120px;"
-                        )
-
-                        ui.separator().style(f"background:{BORDER};")
-
-                        # Flow 2 — Generate outline
-                        ui.label("Generate Outline").classes("text-sm font-semibold tracking-wide").style(
-                            f"color:{PRIMARY}; letter-spacing:0.06em; text-transform:uppercase;"
-                        )
-                        topic_input = ui.input(
-                            placeholder="Article topic…"
-                        ).classes("w-full").style(
-                            f"color:{PRIMARY};"
-                        )
-                        ui.button("Generate", on_click=on_generate).props(
-                            "unelevated"
-                        ).classes("w-full").style(
-                            f"background:{PRIMARY}; color:{SURFACE};"
-                        )
+    refresh_articles()
 
 
 @ui.page(PAGE_LOADING)
@@ -278,7 +332,6 @@ def _shared_head():
     ui.colors(primary=PRIMARY, secondary=ACCENT, accent=ACCENT)
 
 
-
 @ui.page(PAGE_SETUP)
 def setup():
     _shared_head()
@@ -293,7 +346,6 @@ def setup():
         with ui.card().classes("p-10 gap-6 rounded-2xl shadow-lg").style(
             f"width:480px; background:{SURFACE}; border: 1px solid {BORDER};"
         ):
-            # Header
             ui.label("ProseOutline").classes("text-3xl font-semibold").style(
                 f"color:{PRIMARY};"
             )
@@ -303,7 +355,6 @@ def setup():
 
             ui.separator().style(f"background:{BORDER};")
 
-            # Inputs — pre-fill from saved config
             vault_input = ui.input(
                 label="Obsidian vault folder path",
                 placeholder="/Users/you/Documents/MyVault",
@@ -318,7 +369,6 @@ def setup():
                 value=settings.api_key(),
             ).classes("w-full")
 
-            # Verify button
             async def on_verify():
                 vault_path = vault_input.value.strip()
                 if not vault_path or not Path(vault_path).is_dir():
@@ -353,7 +403,6 @@ def setup():
 
             ui.separator().style(f"background:{BORDER};")
 
-            # Save
             def on_save():
                 vault_path = vault_input.value.strip()
                 api_key = api_input.value.strip()
@@ -362,9 +411,7 @@ def setup():
                     result_label.style(f"color:{ERROR};")
                     return
                 settings.save(vault_path, api_key)
-                result_label.set_text(
-                    "Config saved! Restart ProseOutline to begin."
-                )
+                result_label.set_text("Config saved! Restart ProseOutline to begin.")
                 result_label.style(f"color:{PRIMARY};")
                 save_btn.disable()
 

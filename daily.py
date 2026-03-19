@@ -15,16 +15,22 @@ from langchain_core.messages import SystemMessage, HumanMessage
 
 import settings
 
-TOPICS_PROMPT = SystemMessage(content="""You are a writing assistant reviewing a person's notes from today.
+TOPICS_PROMPT = SystemMessage(content="""You are generating LinkedIn post ideas for a senior backend engineer who has been exploring on their own and now is looking for new opportunities. 
 
-Your job is to suggest 5 article topic ideas that could be written from these notes (collected over the last 7 days).
+The following notes are raw, personal, and may include technical learnings, observations, half-formed thoughts, and experiences.
+Generate 4 high-quality LinkedIn post ideas that showcase strong thinking, not interview preparation.
+Constraints:
+- Do NOT generate generic advice or motivational content
+- Do NOT mention interviews, job prep, or studying
+- Each idea must be rooted in a specific observation, problem, or insight from the notes.
+- Prefer ideas that reveal how the author thinks and explores topics around them. 
 
-Rules:
-- Every suggested topic must be directly rooted in the notes provided
-- Each topic should have a 1-sentence angle (not just a label)
-- Prefer topics that connect two or more notes in an unexpected way
-- Output as a numbered list: topic title + one-sentence angle
-- Do not add topics that aren't supported by the notes""")
+Style: conversational and opinionated. Avoid buzzwords and cliches.
+
+Only include ideas where all of the following are true:
+- Specific to the author's experience
+- Reveals reasoning, not just knowledge
+- A hiring manager would learn something about how this person thinks""")
 
 SKIP_DIRS = {"Daily", "Templates"}
 
@@ -94,6 +100,6 @@ def suggest_topics(notes: list[dict]) -> str:
     llm = ChatOpenAI(model="gpt-4o")
     response = llm.invoke([
         TOPICS_PROMPT,
-        HumanMessage(content=f"Notes from the last 7 days:\n\n{context}"),
+        HumanMessage(content=f"Here are my notes from the last 7 days. Generate LinkedIn post ideas from these.\n\n{context}"),
     ])
     return response.content

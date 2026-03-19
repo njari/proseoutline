@@ -79,6 +79,14 @@ def save_outline(outlines_dir: Path, slug: str, topic: str, branch: str, content
     return git_run("rev-parse", "--short", "HEAD", cwd=article_dir)
 
 
+def current_branch(outlines_dir: Path, slug: str) -> str:
+    """Return the branch name HEAD is currently on."""
+    try:
+        return git_run("rev-parse", "--abbrev-ref", "HEAD", cwd=outlines_dir / slug)
+    except RuntimeError:
+        return "main"
+
+
 def read_article(outlines_dir: Path, slug: str, branch: str) -> str:
     """Read content for a branch without modifying the working tree."""
     article_dir = outlines_dir / slug
