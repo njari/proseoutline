@@ -3,13 +3,9 @@ from pathlib import Path
 
 import networkx as nx
 import obsidiantools as otools
-from langchain_community.document_loaders import ObsidianLoader
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_chroma import Chroma
 
 import settings
-CHROMA_DIR = str(Path(__file__).parent / "chroma_db")
+from datalayer import build_or_update_store
 
 
 def build_graph():
@@ -18,14 +14,7 @@ def build_graph():
 
 
 def build_or_load_store():
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-    if os.path.exists(CHROMA_DIR):
-        return Chroma(persist_directory=CHROMA_DIR, embedding_function=embeddings)
-    loader = ObsidianLoader(path=settings.vault_dir(), collect_metadata=True)
-    docs = loader.load()
-    splitter = RecursiveCharacterTextSplitter(chunk_size=200, chunk_overlap=20, add_start_index=True)
-    splits = splitter.split_documents(docs)
-    return Chroma.from_documents(splits, embeddings, persist_directory=CHROMA_DIR)
+    return build_or_update_store(settings.vault_dir())
 
 
 def expand_with_graph(results, store, graph, hops=1):
