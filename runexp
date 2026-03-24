@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -lt 1 ]]; then
+  echo "Usage: runexp <experiment_filename> [--force]"
+  echo "Example: runexp ingest_and_chunk"
+  exit 1
+fi
+
+FILENAME="${1%.py}"   # strip .py if given
+FORCE=""
+[[ "${2:-}" == "--force" ]] && FORCE=", force=True"
+
+cd "$(dirname "$0")"
+
+python - <<EOF
+import importlib, sys
+
+mod = importlib.import_module("experiment.experiments.${FILENAME}")
+cls = next(
+    v for v in vars(mod).values()
+    if isinstance(v, type) and issubclass(v, __import__("experiment").Experiment) and v is not __import__("experiment").Experiment
+)
+from experiment import run_experiment
+run = run_experiment(cls${FORCE})
+print(f"\nRun ID : {run.run_id}")
+print(f"Status : {run.status.value}")
+for r in run.plug_results:
+    print(f"  [{r.status.value:7s}] {r.plug_key}  →  {r.output_path}")
+EOF
