@@ -24,3 +24,4 @@ outlines/
 # Build artifacts
 dist/
 *.egg-info/
+experiments/
