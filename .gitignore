@@ -11,6 +11,7 @@ __pycache__/
 
 # Chroma vector store (large binary + embeddings, rebuild locally)
 chroma_db/
+graph_enrichment/notes.db
 
 # HuggingFace model cache (downloaded automatically)
 .cache/
