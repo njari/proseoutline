@@ -1,5 +1,6 @@
 import re
 import time
+from enum import IntEnum
 from pathlib import Path
 
 import frontmatter
@@ -8,8 +9,12 @@ from .dbconn import get_db
 
 VAULT_DIR = Path('/Users/nubrajarial/Library/Mobile Documents/iCloud~md~obsidian/Documents/helterskelter/')
 
-
 WIKILINK_RE = re.compile(r'\[\[([^\]]+)\]\]')
+
+
+class NoteType(IntEnum):
+    REALIZED = 0
+    UNREALIZED = 1
 
 
 class Note:
@@ -17,12 +22,13 @@ class Note:
         self._conn = get_db()
         self._post = None
         row = self._conn.execute(
-            'SELECT id, note_title, path, last_modified, indexed_at FROM notes WHERE id = ?', (note_id,)
+            'SELECT id, title, last_modified, indexed_at, type FROM notes WHERE id = ?', (note_id,)
         ).fetchone()
         if row is None:
             raise ValueError(f'No note found with id {note_id}')
-        self.id, self.note_title, self.last_modified, self.indexed_at = row[0], row[1], row[3], row[4]
-        self._path = VAULT_DIR / row[2]
+        self.id, self.title, self.last_modified, self.indexed_at = row[0], row[1], row[2], row[3]
+        self.type = NoteType(row[4])
+        self._path = VAULT_DIR / (self.title + '.md') if self.type == NoteType.REALIZED else None
 
     def _load(self):
         if self._post is None:
@@ -30,11 +36,15 @@ class Note:
 
     @property
     def frontmatter(self):
+        if self.type == NoteType.UNREALIZED:
+            raise AttributeError('Unrealized notes have no frontmatter')
         self._load()
         return dict(self._post.metadata)
 
     @property
     def content(self):
+        if self.type == NoteType.UNREALIZED:
+            raise AttributeError('Unrealized notes have no content')
         self._load()
         return self._post.content
 
@@ -43,7 +53,7 @@ class Note:
         rows = self._conn.execute('''
             SELECT n.id FROM notes n
             JOIN links l ON l.to_id = n.id
-            WHERE l.from_id = ? AND l.realized = 1
+            WHERE l.from_id = ?
         ''', (self.id,)).fetchall()
         return [Note(row[0]) for row in rows]
 
@@ -52,12 +62,12 @@ class Note:
         rows = self._conn.execute('''
             SELECT n.id FROM notes n
             JOIN links l ON l.from_id = n.id
-            WHERE l.to_id = ? AND l.realized = 1
+            WHERE l.to_id = ?
         ''', (self.id,)).fetchall()
         return [Note(row[0]) for row in rows]
 
     def __repr__(self):
-        return f'<Note {self.id}: {self.note_title}>'
+        return f'<Note {self.id} [{self.type.name}]: {self.title}>'
 
 
 def extract_wikilinks(text):
@@ -65,7 +75,7 @@ def extract_wikilinks(text):
     return {m.split('|')[0].split('#')[0].strip() for m in matches}
 
 
-def index_file(note_id, file_path):
+def index_file(note_id, file_path, unrealized_titles):
     if not file_path.exists():
         return
     conn = get_db()
@@ -79,13 +89,18 @@ def index_file(note_id, file_path):
     links |= extract_wikilinks(post.content)
 
     for link_title in links:
-        row = conn.execute('SELECT id FROM notes WHERE note_title = ?', (link_title,)).fetchone()
+        row = conn.execute('SELECT id FROM notes WHERE title = ? AND type = ?', (link_title, NoteType.REALIZED)).fetchone()
         if row:
-            conn.execute('INSERT OR IGNORE INTO links (from_id, to_id, realized) VALUES (?, ?, 1)', (note_id, row[0]))
+            to_id = row[0]
         else:
-            conn.execute('INSERT OR IGNORE INTO unrealized_notes (title) VALUES (?)', (link_title,))
-            unrealized_id = conn.execute('SELECT id FROM unrealized_notes WHERE title = ?', (link_title,)).fetchone()[0]
-            conn.execute('INSERT OR IGNORE INTO links (from_id, to_id, realized) VALUES (?, ?, 0)', (note_id, unrealized_id))
+            if link_title not in unrealized_titles:
+                conn.execute(
+                    'INSERT OR IGNORE INTO notes (title, type) VALUES (?, ?)',
+                    (link_title, NoteType.UNREALIZED)
+                )
+                unrealized_titles.add(link_title)
+            to_id = conn.execute('SELECT id FROM notes WHERE title = ?', (link_title,)).fetchone()[0]
+        conn.execute('INSERT OR IGNORE INTO links (from_id, to_id) VALUES (?, ?)', (note_id, to_id))
 
     conn.execute('UPDATE notes SET indexed_at = ? WHERE id = ?', (int(time.time()), note_id))
     conn.commit()

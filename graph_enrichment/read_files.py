@@ -1,8 +1,8 @@
+import time
 from pathlib import Path
 
 from .dbconn import get_db
-from .note import index_file
-
+from .note import NoteType, index_file
 
 
 VAULT_DIR = Path('/Users/nubrajarial/Library/Mobile Documents/iCloud~md~obsidian/Documents/helterskelter/')
@@ -10,28 +10,29 @@ VAULT_DIR = Path('/Users/nubrajarial/Library/Mobile Documents/iCloud~md~obsidian
 
 def add_files_to_table():
     conn = get_db()
-    for file_path in VAULT_DIR.rglob('*'):
-        if not file_path.is_file():
-            continue
-        rel_path = file_path.relative_to(VAULT_DIR)
+    for file_path in VAULT_DIR.glob('*.md'):
         last_modified = int(file_path.stat().st_mtime)
         conn.execute('''
-            INSERT INTO notes (note_title, path, last_modified)
-            VALUES (?, ?, ?)
-            ON CONFLICT(path) DO UPDATE SET
-                note_title    = excluded.note_title,
-                last_modified = excluded.last_modified
-        ''', (file_path.stem, str(rel_path), last_modified))
+            INSERT INTO notes (title, last_modified, seen_at, type)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(title) DO UPDATE SET
+                last_modified = excluded.last_modified,
+                seen_at       = excluded.seen_at,
+                type          = excluded.type
+        ''', (file_path.stem, last_modified, int(time.time()), NoteType.REALIZED))
     conn.commit()
 
 
 def main():
     add_files_to_table()
     conn = get_db()
-    cursor = conn.execute('SELECT id, path FROM notes WHERE indexed_at IS NULL OR indexed_at < last_modified')
-    for note_id, rel_path in cursor.fetchall():
-        index_file(note_id, VAULT_DIR / rel_path)
-    print(f"Done")
+    unrealized_titles = {
+        row[0] for row in conn.execute('SELECT title FROM notes WHERE type = ?', (NoteType.UNREALIZED,))
+    }
+    cursor = conn.execute('SELECT id, title FROM notes WHERE type = ? AND (indexed_at IS NULL OR indexed_at < last_modified)', (NoteType.REALIZED,))
+    for note_id, title in cursor.fetchall():
+        index_file(note_id, VAULT_DIR / (title + '.md'), unrealized_titles)
+    print("Done")
 
 
 if __name__ == "__main__":

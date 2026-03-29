@@ -9,9 +9,22 @@ def get_db():
     global _conn
     if _conn is None:
         _conn = sqlite3.connect(DB_PATH)
-        _conn.execute("CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT, note_title TEXT NOT NULL, path TEXT NOT NULL UNIQUE, last_modified INTEGER NOT NULL, indexed_at INTEGER)")
-        _conn.execute("CREATE TABLE IF NOT EXISTS unrealized_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL UNIQUE)")
-        _conn.execute("CREATE TABLE IF NOT EXISTS links (from_id INTEGER NOT NULL, to_id INTEGER NOT NULL, realized INTEGER NOT NULL, PRIMARY KEY (from_id, to_id, realized))")
+        _conn.execute("""
+            CREATE TABLE IF NOT EXISTS notes (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                title         TEXT NOT NULL UNIQUE,
+                last_modified INTEGER,
+                indexed_at    INTEGER,
+                seen_at       INTEGER,
+                type          INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        _conn.execute("""
+            CREATE TABLE IF NOT EXISTS links (
+                from_id  INTEGER NOT NULL,
+                to_id    INTEGER NOT NULL,
+                PRIMARY KEY (from_id, to_id)
+            )
+        """)
         _conn.commit()
     return _conn
-
