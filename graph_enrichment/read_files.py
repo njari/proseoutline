@@ -1,18 +1,14 @@
-import sqlite3
 from pathlib import Path
 
+from .dbconn import get_db
+from .note import index_file
+
+
+
 VAULT_DIR = Path('/Users/nubrajarial/Library/Mobile Documents/iCloud~md~obsidian/Documents/helterskelter/')
-DB_PATH = Path(__file__).parent / 'notes.db'
 
 
-def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("CREATE TABLE IF NOT EXISTS notes (id            INTEGER PRIMARY KEY AUTOINCREMENT, note_title    TEXT NOT NULL,path          TEXT NOT NULL UNIQUE,last_modified INTEGER NOT NULL,indexed_at INTEGER )")
-    conn.commit()
-    return conn
-
-
-def main():
+def add_files_to_table():
     conn = get_db()
     for file_path in VAULT_DIR.rglob('*'):
         if not file_path.is_file():
@@ -27,8 +23,15 @@ def main():
                 last_modified = excluded.last_modified
         ''', (file_path.stem, str(rel_path), last_modified))
     conn.commit()
-    conn.close()
-    print(f"Done. Database saved to {DB_PATH}")
+
+
+def main():
+    add_files_to_table()
+    conn = get_db()
+    cursor = conn.execute('SELECT id, path FROM notes WHERE indexed_at IS NULL OR indexed_at < last_modified')
+    for note_id, rel_path in cursor.fetchall():
+        index_file(note_id, VAULT_DIR / rel_path)
+    print(f"Done")
 
 
 if __name__ == "__main__":
