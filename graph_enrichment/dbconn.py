@@ -15,10 +15,15 @@ def get_db():
                 title         TEXT NOT NULL UNIQUE,
                 last_modified INTEGER,
                 indexed_at    INTEGER,
+                embedded_at   INTEGER,
                 seen_at       INTEGER,
                 type          INTEGER NOT NULL DEFAULT 0
             )
         """)
+        try:
+            _conn.execute("ALTER TABLE notes ADD COLUMN embedded_at INTEGER")
+        except sqlite3.OperationalError:
+            pass
         _conn.execute("""
             CREATE TABLE IF NOT EXISTS links (
                 from_id  INTEGER NOT NULL,
@@ -53,6 +58,14 @@ def get_db():
                 note_b_id  INTEGER NOT NULL,
                 score      INTEGER NOT NULL,
                 PRIMARY KEY (note_a_id, note_b_id)
+            )
+        """)
+        _conn.execute("""
+            CREATE TABLE IF NOT EXISTS clusters (
+                note_id     INTEGER NOT NULL,
+                cluster_id  INTEGER NOT NULL,
+                algorithm   TEXT NOT NULL,
+                PRIMARY KEY (note_id, algorithm)
             )
         """)
         _conn.commit()

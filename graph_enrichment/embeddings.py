@@ -1,0 +1,58 @@
+import time
+from pathlib import Path
+
+import chromadb
+from openai import OpenAI
+
+import settings
+from .dbconn import get_db
+from .note import NoteType
+from .read_files import VAULT_DIR
+
+CHROMA_PATH = Path(__file__).parent / 'chroma'
+COLLECTION  = 'notes'
+
+
+def get_collection():
+    client = chromadb.PersistentClient(path=str(CHROMA_PATH))
+    return client.get_or_create_collection(COLLECTION)
+
+
+def embed_notes():
+    conn = get_db()
+    collection = get_collection()
+    client = OpenAI(api_key=settings.api_key())
+
+    rows = conn.execute('''
+        SELECT id, title FROM notes
+        WHERE type = ? AND (embedded_at IS NULL OR embedded_at < last_modified)
+    ''', (NoteType.REALIZED,)).fetchall()
+
+    print(f"Embedding {len(rows)} notes…")
+    for note_id, title in rows:
+        path = VAULT_DIR / (title + '.md')
+        try:
+            text = path.read_text('utf-8')
+        except Exception:
+            continue
+
+        response = client.embeddings.create(
+            model='text-embedding-3-small',
+            input=text,
+        )
+        vector = response.data[0].embedding
+
+        collection.upsert(
+            ids=[str(note_id)],
+            embeddings=[vector],
+            metadatas=[{'note_id': note_id, 'title': title}],
+        )
+        conn.execute('UPDATE notes SET embedded_at = ? WHERE id = ?', (int(time.time()), note_id))
+        conn.commit()
+        print(f"  ✓ {title}")
+
+    print("Done")
+
+
+if __name__ == '__main__':
+    embed_notes()

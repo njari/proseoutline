@@ -9,6 +9,7 @@ from articles import (
     commit_edit, init_article_repo, current_branch,
 )
 from daily import scan_notes, suggest_topics
+from graph_enrichment.clustering import get_cluster_notes
 import state
 from state import KnowledgeMap, BuildStatus
 from theme import (
@@ -54,9 +55,22 @@ def _section_divider():
     ui.separator().style(f"background:{BORDER};")
 
 
-def _section_daily_ideas() -> dict:
-    _section_header("Today's Ideas")
-    btn = ui.button("Suggest from daily notes").props("unelevated").classes("w-full").style(
+def _section_cluster_browse() -> dict:
+    _section_header("Browse Cluster")
+    with ui.row().classes("w-full gap-2"):
+        algo_select = ui.select(
+            options=["louvain", "kmeans", "hdbscan"],
+            value="louvain",
+            label="Algorithm",
+        ).classes("flex-1").style(f"color:{PRIMARY};")
+        rank_input = ui.number(
+            label="Cluster rank",
+            value=1,
+            min=1,
+            step=1,
+            format="%d",
+        ).classes("flex-1").style(f"color:{PRIMARY};")
+    btn = ui.button("Suggest from cluster").props("unelevated").classes("w-full").style(
         f"background:{BG_PANEL}; color:{PRIMARY}; border: 1px solid {BORDER};"
     )
     count_label = ui.label("").classes("text-xs")
@@ -65,7 +79,13 @@ def _section_daily_ideas() -> dict:
     ).style(
         f"background:{SURFACE}; border: 1px solid {BORDER}; color:{TEXT_BODY}; min-height:120px;"
     )
-    return {"btn": btn, "count_label": count_label, "ideas_area": ideas_area}
+    return {
+        "btn": btn,
+        "algo_select": algo_select,
+        "rank_input": rank_input,
+        "count_label": count_label,
+        "ideas_area": ideas_area,
+    }
 
 
 def _section_generate() -> dict:
@@ -181,7 +201,7 @@ def index():
                     with ui.column().classes("w-full h-full p-5 gap-4").style(
                         f"background:{BG_PAGE}; border-left: 1px solid {BORDER};"
                     ):
-                        daily_w    = _section_daily_ideas()
+                        daily_w    = _section_cluster_browse()
                         _section_divider()
                         gen_w      = _section_generate()
                         action_w   = _section_article_actions()
@@ -234,23 +254,19 @@ def index():
         status.set_text("Done — edit and save when ready.")
         refresh_articles()
 
-    async def on_daily_ideas():
-        daily_w["ideas_area"].set_content("_Loading notes from the last 7 days…_")
-        notes = await run.io_bound(scan_notes, 7)
+    async def on_browse_cluster():
+        algo = daily_w["algo_select"].value
+        rank = int(daily_w["rank_input"].value or 1)
+        daily_w["ideas_area"].set_content(f"_Loading cluster {rank} ({algo})…_")
+        notes = await run.io_bound(get_cluster_notes, algo, rank)
         count = len(notes)
         if count == 0:
-            daily_w["count_label"].set_text("No notes found in the last 7 days.")
+            daily_w["count_label"].set_text(f"No notes found for cluster {rank} ({algo}).")
             daily_w["count_label"].style(f"color:{TEXT_SUBTLE};")
             daily_w["ideas_area"].set_content("")
             return
-        if count < 5:
-            daily_w["count_label"].set_text(
-                f"{count} note{'s' if count > 1 else ''} this week · too little — you might be generating nonsense!"
-            )
-            daily_w["count_label"].style(f"color:{WARNING};")
-        else:
-            daily_w["count_label"].set_text(f"{count} notes found this week")
-            daily_w["count_label"].style(f"color:{TEXT_MUTED};")
+        daily_w["count_label"].set_text(f"{count} notes in cluster {rank} ({algo})")
+        daily_w["count_label"].style(f"color:{TEXT_MUTED};")
         ideas = await run.io_bound(suggest_topics, notes)
         daily_w["ideas_area"].set_content(ideas)
 
@@ -286,7 +302,7 @@ def index():
 
     # --- Wire buttons to handlers ---
     save_btn.on("click", on_save)
-    daily_w["btn"].on("click", on_daily_ideas)
+    daily_w["btn"].on("click", on_browse_cluster)
     gen_w["btn"].on("click", on_generate)
     action_w["improve_btn"].on("click", on_improve)
     action_w["direction_btn"].on("click", on_new_direction)

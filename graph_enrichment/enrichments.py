@@ -46,7 +46,6 @@ class TagEnrichment(Enrichment):
     """Tag extraction → `tags` + `tag_links` tables."""
 
     def enrich(self, note):
-        self._load()
         conn = get_db()
         note_tags = note.frontmatter.get('tags') or []
         for tag in note_tags:
