@@ -39,5 +39,21 @@ def get_db():
                 PRIMARY KEY (note_id, tag_id)
             )
         """)
+        _conn.execute("""
+            CREATE TABLE IF NOT EXISTS bib_coupling (
+                note_a_id  INTEGER NOT NULL,
+                note_b_id  INTEGER NOT NULL,
+                score      INTEGER NOT NULL,
+                PRIMARY KEY (note_a_id, note_b_id)
+            )
+        """)
+        _conn.execute("""
+            CREATE TABLE IF NOT EXISTS cocitation (
+                note_a_id  INTEGER NOT NULL,
+                note_b_id  INTEGER NOT NULL,
+                score      INTEGER NOT NULL,
+                PRIMARY KEY (note_a_id, note_b_id)
+            )
+        """)
         _conn.commit()
     return _conn

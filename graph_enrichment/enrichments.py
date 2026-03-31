@@ -56,4 +56,46 @@ class TagEnrichment(Enrichment):
                          (note.id, tag_id))
 
 
-ENRICHMENTS = [BaseEnrichment(), TagEnrichment()]
+class BibliographicCouplingEnrichment(Enrichment):
+    """Notes sharing outgoing links (bibliographic coupling) → `similarity` table."""
+
+    def enrich(self, note):
+        conn = get_db()
+        rows = conn.execute('''
+            SELECT l2.from_id, COUNT(*) AS score
+            FROM links l1
+            JOIN links l2 ON l1.to_id = l2.to_id AND l2.from_id != ?
+            WHERE l1.from_id = ?
+            GROUP BY l2.from_id
+        ''', (note.id, note.id)).fetchall()
+        for other_id, score in rows:
+            a, b = min(note.id, other_id), max(note.id, other_id)
+            conn.execute('''
+                INSERT INTO bib_coupling (note_a_id, note_b_id, score)
+                VALUES (?, ?, ?)
+                ON CONFLICT(note_a_id, note_b_id) DO UPDATE SET score = excluded.score
+            ''', (a, b, score))
+
+
+class CocitationEnrichment(Enrichment):
+    """Notes sharing incoming links (co-citation) → `similarity` table."""
+
+    def enrich(self, note):
+        conn = get_db()
+        rows = conn.execute('''
+            SELECT l2.to_id, COUNT(*) AS score
+            FROM links l1
+            JOIN links l2 ON l1.from_id = l2.from_id AND l2.to_id != ?
+            WHERE l1.to_id = ?
+            GROUP BY l2.to_id
+        ''', (note.id, note.id)).fetchall()
+        for other_id, score in rows:
+            a, b = min(note.id, other_id), max(note.id, other_id)
+            conn.execute('''
+                INSERT INTO cocitation (note_a_id, note_b_id, score)
+                VALUES (?, ?, ?)
+                ON CONFLICT(note_a_id, note_b_id) DO UPDATE SET score = excluded.score
+            ''', (a, b, score))
+
+
+ENRICHMENTS = [BaseEnrichment(), TagEnrichment(), BibliographicCouplingEnrichment(), CocitationEnrichment()]
