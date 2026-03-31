@@ -75,32 +75,16 @@ def extract_wikilinks(text):
     return {m.split('|')[0].split('#')[0].strip() for m in matches}
 
 
-def index_file(note_id, file_path, unrealized_titles):
-    if not file_path.exists():
+def index_file(note_id, enrichments):
+    note = Note(note_id)
+    if not note._path.exists():
         return
-    conn = get_db()
     try:
-        post = frontmatter.load(file_path)
+        note._load()
     except Exception:
         return
-    print(post.metadata)
-
-    links = extract_wikilinks(str(post.metadata))
-    links |= extract_wikilinks(post.content)
-
-    for link_title in links:
-        row = conn.execute('SELECT id FROM notes WHERE title = ? AND type = ?', (link_title, NoteType.REALIZED)).fetchone()
-        if row:
-            to_id = row[0]
-        else:
-            if link_title not in unrealized_titles:
-                conn.execute(
-                    'INSERT OR IGNORE INTO notes (title, type) VALUES (?, ?)',
-                    (link_title, NoteType.UNREALIZED)
-                )
-                unrealized_titles.add(link_title)
-            to_id = conn.execute('SELECT id FROM notes WHERE title = ?', (link_title,)).fetchone()[0]
-        conn.execute('INSERT OR IGNORE INTO links (from_id, to_id) VALUES (?, ?)', (note_id, to_id))
-
+    for strategy in enrichments:
+        strategy.enrich(note)
+    conn = get_db()
     conn.execute('UPDATE notes SET indexed_at = ? WHERE id = ?', (int(time.time()), note_id))
     conn.commit()

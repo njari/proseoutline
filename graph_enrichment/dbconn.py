@@ -26,5 +26,12 @@ def get_db():
                 PRIMARY KEY (from_id, to_id)
             )
         """)
+        _conn.execute("""
+            CREATE TABLE IF NOT EXISTS tag_links (
+                from_id  INTEGER NOT NULL,
+                to_id    INTEGER NOT NULL,
+                PRIMARY KEY (from_id, to_id)
+            )
+        """)
         _conn.commit()
     return _conn

@@ -2,6 +2,7 @@ import time
 from pathlib import Path
 
 from .dbconn import get_db
+from .enrichments import ENRICHMENTS
 from .note import NoteType, index_file
 
 
@@ -26,12 +27,12 @@ def add_files_to_table():
 def main():
     add_files_to_table()
     conn = get_db()
-    unrealized_titles = {
-        row[0] for row in conn.execute('SELECT title FROM notes WHERE type = ?', (NoteType.UNREALIZED,))
-    }
-    cursor = conn.execute('SELECT id, title FROM notes WHERE type = ? AND (indexed_at IS NULL OR indexed_at < last_modified)', (NoteType.REALIZED,))
-    for note_id, title in cursor.fetchall():
-        index_file(note_id, VAULT_DIR / (title + '.md'), unrealized_titles)
+    cursor = conn.execute(
+        'SELECT id FROM notes WHERE type = ? AND (indexed_at IS NULL OR indexed_at < last_modified)',
+        (NoteType.REALIZED,)
+    )
+    for (note_id,) in cursor.fetchall():
+        index_file(note_id, ENRICHMENTS)
     print("Done")
 
 
