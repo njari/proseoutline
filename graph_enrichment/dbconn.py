@@ -27,10 +27,16 @@ def get_db():
             )
         """)
         _conn.execute("""
+            CREATE TABLE IF NOT EXISTS tags (
+                id   INTEGER PRIMARY KEY AUTOINCREMENT,
+                tag  TEXT NOT NULL UNIQUE
+            )
+        """)
+        _conn.execute("""
             CREATE TABLE IF NOT EXISTS tag_links (
-                from_id  INTEGER NOT NULL,
-                to_id    INTEGER NOT NULL,
-                PRIMARY KEY (from_id, to_id)
+                note_id  INTEGER NOT NULL,
+                tag_id   INTEGER NOT NULL,
+                PRIMARY KEY (note_id, tag_id)
             )
         """)
         _conn.commit()

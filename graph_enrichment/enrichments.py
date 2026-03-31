@@ -1,7 +1,5 @@
 import abc
 
-import frontmatter
-
 from .dbconn import get_db
 from .note import Note, NoteType, extract_wikilinks
 
@@ -45,39 +43,17 @@ class BaseEnrichment(Enrichment):
 
 
 class TagEnrichment(Enrichment):
-    """Shared-tag links → `tag_links` table."""
-
-    def __init__(self):
-        self._tags = None
-
-    def _load(self):
-        if self._tags is None:
-            from .read_files import VAULT_DIR
-            conn = get_db()
-            self._tags = {}
-            for title, note_id in conn.execute(
-                'SELECT title, id FROM notes WHERE type = ?', (NoteType.REALIZED,)
-            ):
-                file_path = VAULT_DIR / (title + '.md')
-                try:
-                    post = frontmatter.load(file_path)
-                except Exception:
-                    continue
-                for tag in (post.metadata.get('tags') or []):
-                    self._tags.setdefault(tag, []).append(note_id)
+    """Tag extraction → `tags` + `tag_links` tables."""
 
     def enrich(self, note):
         self._load()
         conn = get_db()
         note_tags = note.frontmatter.get('tags') or []
-        seen = set()
         for tag in note_tags:
-            for other_id in self._tags.get(tag, []):
-                if other_id == note.id or other_id in seen:
-                    continue
-                seen.add(other_id)
-                conn.execute('INSERT OR IGNORE INTO tag_links (from_id, to_id) VALUES (?, ?)',
-                             (note.id, other_id))
+            conn.execute('INSERT OR IGNORE INTO tags (tag) VALUES (?)', (tag,))
+            tag_id = conn.execute('SELECT id FROM tags WHERE tag = ?', (tag,)).fetchone()[0]
+            conn.execute('INSERT OR IGNORE INTO tag_links (note_id, tag_id) VALUES (?, ?)',
+                         (note.id, tag_id))
 
 
 ENRICHMENTS = [BaseEnrichment(), TagEnrichment()]
