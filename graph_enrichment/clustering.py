@@ -137,5 +137,6 @@ def cluster_hdbscan(umap_components=15, min_cluster_size=5):
 
 
 if __name__ == '__main__':
-    cluster_louvain()
-    cluster_kmeans(k=5)
+    # cluster_louvain()
+    # cluster_kmeans(k=5)
+    cluster_hdbscan()

@@ -10,6 +10,7 @@ from articles import (
 )
 from daily import scan_notes, suggest_topics
 from graph_enrichment.clustering import get_cluster_notes
+from graph_enrichment.graph_data import get_graph_data
 import state
 from state import KnowledgeMap, BuildStatus
 from theme import (
@@ -36,6 +37,7 @@ async def startup():
 PAGE_INDEX   = "/"
 PAGE_LOADING = "/loading"
 PAGE_SETUP   = "/setup"
+PAGE_GRAPH   = "/graph"
 
 
 # ---------------------------------------------------------------------------
@@ -57,23 +59,20 @@ def _section_divider():
 
 def _section_cluster_browse() -> dict:
     _section_header("Browse Cluster")
-    with ui.row().classes("w-full gap-2"):
+    with ui.row().classes("w-full gap-2 items-center"):
         algo_select = ui.select(
             options=["louvain", "kmeans", "hdbscan"],
             value="louvain",
-            label="Algorithm",
-        ).classes("flex-1").style(f"color:{PRIMARY};")
-        rank_input = ui.number(
-            label="Cluster rank",
-            value=1,
-            min=1,
-            step=1,
-            format="%d",
-        ).classes("flex-1").style(f"color:{PRIMARY};")
+        ).props("outlined dense hide-dropdown-icon").classes("flex-1").style(
+            f"color:{PRIMARY}; font-size:0.85rem;"
+        )
+        rank_input = ui.number(value=1, min=1, step=1, format="%d").props(
+            "outlined dense"
+        ).classes("w-16").style(f"color:{PRIMARY}; font-size:0.85rem;")
     btn = ui.button("Suggest from cluster").props("unelevated").classes("w-full").style(
         f"background:{BG_PANEL}; color:{PRIMARY}; border: 1px solid {BORDER};"
     )
-    count_label = ui.label("").classes("text-xs")
+    count_label = ui.label("").classes("text-xs").style(f"color:{TEXT_MUTED};")
     ideas_area = ui.markdown("").classes(
         "text-sm w-full overflow-auto flex-1 p-3 rounded-xl"
     ).style(
@@ -168,9 +167,13 @@ def index():
             with ui.column().classes("w-full h-full p-4 gap-2").style(
                 f"background:{BG_PANEL}; border-right: 1px solid {BORDER};"
             ):
-                ui.label("Articles").classes("text-sm font-semibold tracking-wide").style(
-                    f"color:{PRIMARY}; letter-spacing:0.06em; text-transform:uppercase;"
-                )
+                with ui.row().classes("w-full items-center justify-between"):
+                    ui.label("Articles").classes("text-sm font-semibold tracking-wide").style(
+                        f"color:{PRIMARY}; letter-spacing:0.06em; text-transform:uppercase;"
+                    )
+                    ui.button(icon="hub", on_click=lambda: ui.navigate.to(PAGE_GRAPH)).props(
+                        "flat dense"
+                    ).style(f"color:{PRIMARY};").tooltip("Explore graph")
                 articles_list = ui.list().classes("w-full gap-1")
 
         with outer.after:
@@ -437,6 +440,156 @@ def setup():
             ).classes("w-full").style(f"background:{PRIMARY}; color:{SURFACE};")
             if not settings.is_configured():
                 save_btn.disable()
+
+
+@ui.page(PAGE_GRAPH)
+def graph_explorer():
+    if not settings.is_configured():
+        ui.navigate.to(PAGE_SETUP)
+        return
+
+    _shared_head()
+    ui.add_head_html("""
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <style>
+      #graph-canvas { width: 100%; height: 100%; }
+      .vis-network:focus { outline: none; }
+    </style>
+    """)
+    ui.query("body").style("margin:0; padding:0;")
+
+    data = get_graph_data()
+
+    EDGE_COLORS = {
+        'links':        '#6366f1',
+        'tag_links':    '#10b981',
+        'bib_coupling': '#f59e0b',
+        'cocitation':   '#ef4444',
+    }
+    EDGE_LABELS = {
+        'links':        'Wikilinks',
+        'tag_links':    'Tags',
+        'bib_coupling': 'Bib coupling',
+        'cocitation':   'Co-citation',
+    }
+
+    import json
+    nodes_json = json.dumps(data['nodes'])
+    edges_json = json.dumps(data['edges'])
+    colors_json = json.dumps(EDGE_COLORS)
+
+    with ui.row().classes("w-full h-screen gap-0"):
+
+        # --- Sidebar ---
+        with ui.column().classes("h-full p-5 gap-4 shrink-0").style(
+            f"width:220px; background:{BG_PANEL}; border-right:1px solid {BORDER};"
+        ):
+            ui.button(icon="arrow_back", on_click=lambda: ui.navigate.to(PAGE_INDEX)).props(
+                "flat dense"
+            ).style(f"color:{PRIMARY};")
+            ui.label("Graph Explorer").classes("text-sm font-semibold tracking-wide").style(
+                f"color:{PRIMARY}; letter-spacing:0.06em; text-transform:uppercase;"
+            )
+            ui.separator().style(f"background:{BORDER};")
+            _section_header("Enrichments")
+
+            for key, label in EDGE_LABELS.items():
+                color = EDGE_COLORS[key]
+                with ui.row().classes("items-center gap-2"):
+                    cb = ui.checkbox(value=True).style(f"color:{color};")
+                    ui.label(label).classes("text-sm").style(f"color:{TEXT_BODY};")
+                    cb.on('update:model-value', js_handler=f"""
+                        (v) => {{
+                            window._graphToggle('{key}', v);
+                        }}
+                    """)
+
+            ui.separator().style(f"background:{BORDER};")
+            _section_header("Physics")
+            physics_toggle = ui.switch("Enabled", value=True).style(f"color:{PRIMARY};")
+            physics_toggle.on('update:model-value', js_handler="""
+                (v) => { window._graphPhysics(v); }
+            """)
+
+            ui.separator().style(f"background:{BORDER};")
+            node_label = ui.label("Click a node").classes("text-xs").style(
+                f"color:{TEXT_MUTED}; word-break:break-word;"
+            )
+
+        # --- Canvas ---
+        with ui.column().classes("flex-1 h-full"):
+            ui.html('<div id="graph-canvas"></div>').classes("w-full h-full")
+
+    ui.run_javascript(f"""
+    (function() {{
+        const allNodes = {nodes_json};
+        const allEdgesByType = {edges_json};
+        const colors = {colors_json};
+
+        let edgeId = 0;
+        let activeTypes = new Set(['links','tag_links','bib_coupling','cocitation']);
+
+        const nodeDataset = new vis.DataSet(allNodes.map(n => ({{
+            ...n,
+            color: n.group === 'tag'
+                ? {{ background:'#10b981', border:'#059669', highlight:{{background:'#34d399'}} }}
+                : {{ background:'#e0f2fe', border:'#1e3a8a', highlight:{{background:'#bae6fd'}} }},
+            font: {{ size: n.group === 'tag' ? 10 : 12, color: '#334155' }},
+            shape: n.group === 'tag' ? 'diamond' : 'dot',
+            size: n.group === 'tag' ? 8 : 12,
+        }})));
+
+        function buildEdges() {{
+            let result = [];
+            for (const [type, edges] of Object.entries(allEdgesByType)) {{
+                if (!activeTypes.has(type)) continue;
+                for (const e of edges) {{
+                    result.push({{
+                        ...e,
+                        id: edgeId++,
+                        _type: type,
+                        color: {{ color: colors[type], opacity: 0.6 }},
+                        width: e.value ? Math.min(1 + e.value * 0.5, 5) : 1,
+                        arrows: type === 'links' ? 'to' : undefined,
+                        smooth: {{ type: 'continuous' }},
+                    }});
+                }}
+            }}
+            return result;
+        }}
+
+        const edgeDataset = new vis.DataSet(buildEdges());
+
+        const container = document.getElementById('graph-canvas');
+        const network = new vis.Network(container, {{
+            nodes: nodeDataset,
+            edges: edgeDataset,
+        }}, {{
+            physics: {{ enabled: true, stabilization: {{ iterations: 150 }} }},
+            interaction: {{ hover: true, tooltipDelay: 100 }},
+        }});
+
+        network.on('click', (params) => {{
+            if (params.nodes.length) {{
+                const node = nodeDataset.get(params.nodes[0]);
+                emitEvent('node-click', node.label);
+            }}
+        }});
+
+        window._graphToggle = (type, enabled) => {{
+            if (enabled) activeTypes.add(type);
+            else activeTypes.delete(type);
+            edgeDataset.clear();
+            edgeDataset.add(buildEdges());
+        }};
+
+        window._graphPhysics = (enabled) => {{
+            network.setOptions({{ physics: {{ enabled }} }});
+        }};
+    }})();
+    """)
+
+    ui.on('node-click', lambda e: node_label.set_text(e.args))
 
 
 def serve():
