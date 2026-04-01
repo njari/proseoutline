@@ -1,6 +1,4 @@
-import os
-
-from langchain_openai import ChatOpenAI
+from openai import AsyncOpenAI, OpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 
 OUTLINE_PROMPT = SystemMessage(content="""You are helping a senior backend engineer transitioning toward product roles turn their personal notes into a LinkedIn post outline.
@@ -26,16 +24,8 @@ Style: conversational, opinionated, no buzzwords. Product thinking, system desig
 
 
 def _build_context(topic, docs):
-    seen = set()
-    unique_docs = []
-    for d in docs:
-        src = d.metadata.get("source", "")
-        if src not in seen:
-            seen.add(src)
-            unique_docs.append(d)
     context = "\n\n---\n\n".join(
-        f"[[{os.path.splitext(os.path.basename(d.metadata.get('source', 'note')))[0]}]]\n{d.page_content}"
-        for d in unique_docs
+        f"[[{d['name']}]]\n{d['content']}" for d in docs if d.get('content')
     )
     return [
         OUTLINE_PROMPT,
@@ -54,39 +44,39 @@ Keep all [[note-name]] citations intact. If a section is removed due to feedback
 Style: conversational, opinionated, no buzzwords. The revision should feel like a sharper version of the same thinking, not a different post.""")
 
 
-def generate_outline(topic, docs) -> str:
-    llm = ChatOpenAI(model="gpt-4o")
-    return llm.invoke(_build_context(topic, docs)).content
+import settings as _settings
+
+
+def _client(): return AsyncOpenAI(api_key=_settings.api_key())
 
 
 async def stream_outline(topic, docs):
     """Async generator — yields text chunks as they arrive from GPT-4o."""
-    llm = ChatOpenAI(model="gpt-4o", streaming=True)
-    async for chunk in llm.astream(_build_context(topic, docs)):
-        yield chunk.content
+    msgs = _build_context(topic, docs)
+    stream = await _client().chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "system" if isinstance(m, SystemMessage) else "user", "content": m.content} for m in msgs],
+        stream=True,
+    )
+    async for chunk in stream:
+        yield chunk.choices[0].delta.content or ""
 
 
 async def revise_outline(current_outline: str, feedback: str, docs):
     """Async generator — streams a revised outline given feedback on the current one."""
-    seen = set()
-    unique_docs = []
-    for d in docs:
-        src = d.metadata.get("source", "")
-        if src not in seen:
-            seen.add(src)
-            unique_docs.append(d)
     notes_context = "\n\n---\n\n".join(
-        f"[[{os.path.splitext(os.path.basename(d.metadata.get('source', 'note')))[0]}]]\n{d.page_content}"
-        for d in unique_docs
+        f"[[{d['name']}]]\n{d['content']}" for d in docs if d.get('content')
     )
     messages = [
-        REVISE_PROMPT,
-        HumanMessage(content=(
+        {"role": "system", "content": REVISE_PROMPT.content},
+        {"role": "user", "content": (
             f"Current outline:\n{current_outline}\n\n"
             f"Author feedback: {feedback}\n\n"
             f"Notes:\n{notes_context}"
-        )),
+        )},
     ]
-    llm = ChatOpenAI(model="gpt-4o", streaming=True)
-    async for chunk in llm.astream(messages):
-        yield chunk.content
+    stream = await _client().chat.completions.create(
+        model="gpt-4o", messages=messages, stream=True,
+    )
+    async for chunk in stream:
+        yield chunk.choices[0].delta.content or ""

@@ -2,7 +2,6 @@ from pathlib import Path
 
 from nicegui import ui, app as nicegui_app, run
 
-from vault import retrieve
 from generator import stream_outline, revise_outline
 from articles import (
     OUTLINES_DIR, Article, slugify, list_articles,
@@ -11,8 +10,7 @@ from articles import (
 from daily import scan_notes, suggest_topics
 from graph_enrichment.clustering import get_cluster_notes
 from graph_enrichment.graph_data import get_graph_data
-import state
-from state import KnowledgeMap, BuildStatus
+from graph_enrichment.embeddings import retrieve
 from theme import (
     PRIMARY, ACCENT, SURFACE, BG_PAGE, BG_PANEL, BORDER,
     TEXT_BODY, TEXT_MUTED, TEXT_SUBTLE, SUCCESS, WARNING, ERROR,
@@ -20,22 +18,10 @@ from theme import (
 import settings
 
 
-@nicegui_app.on_startup
-async def startup():
-    if not settings.is_configured():
-        return
-
-    def on_status(s: BuildStatus) -> None:
-        state.build_status = s
-
-    state.knowledge_map = await KnowledgeMap.build(on_status)
-
-
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 PAGE_INDEX   = "/"
-PAGE_LOADING = "/loading"
 PAGE_SETUP   = "/setup"
 PAGE_GRAPH   = "/graph"
 
@@ -143,9 +129,6 @@ def index():
     if not settings.is_configured():
         ui.navigate.to(PAGE_SETUP)
         return
-    if state.knowledge_map is None:
-        ui.navigate.to(PAGE_LOADING)
-        return
 
     _shared_head()
     ui.add_head_html(f"""
@@ -249,7 +232,7 @@ def index():
         article_label.set_text(slug)
         await run.io_bound(init_article_repo, OUTLINES_DIR / slug)
         status.set_text(f"Retrieving notes for '{topic}'…")
-        docs = await run.io_bound(retrieve, state.knowledge_map.store, state.knowledge_map.graph, topic)
+        docs = await run.io_bound(retrieve, topic)
         status.set_text(f"Generating from {len(docs)} notes…")
         editor.value = ""
         async for chunk in stream_outline(topic, docs):
@@ -278,9 +261,7 @@ def index():
         if not feedback or not article.slug:
             status.set_text("Load an article and enter feedback first.")
             return
-        docs = await run.io_bound(
-            retrieve, state.knowledge_map.store, state.knowledge_map.graph, article.slug
-        )
+        docs = await run.io_bound(retrieve, article.slug)
         current = editor.value
         status.set_text("Revising outline…")
         editor.value = ""
@@ -294,9 +275,7 @@ def index():
             status.set_text("Load an article first.")
             return
         topic = article.slug.replace("-", " ")
-        docs = await run.io_bound(
-            retrieve, state.knowledge_map.store, state.knowledge_map.graph, topic
-        )
+        docs = await run.io_bound(retrieve, topic)
         status.set_text("Exploring new direction…")
         editor.value = ""
         async for chunk in stream_outline(topic, docs):
@@ -311,30 +290,6 @@ def index():
     action_w["direction_btn"].on("click", on_new_direction)
 
     refresh_articles()
-
-
-@ui.page(PAGE_LOADING)
-def loading():
-    _shared_head()
-    ui.query("body").style("margin:0; padding:0;")
-
-    with ui.column().classes("w-full h-screen items-center justify-center gap-4").style(
-        f"background:{BG_PAGE};"
-    ):
-        ui.spinner(size="xl", color=PRIMARY)
-        status_label = ui.label("Starting up...").classes("text-sm").style(
-            f"color:{PRIMARY};"
-        )
-
-    def poll():
-        msg = state.build_status.value
-        if msg:
-            status_label.set_text(msg)
-        if state.knowledge_map is not None:
-            t.cancel()
-            ui.navigate.to(PAGE_INDEX)
-
-    t = ui.timer(0.5, poll)
 
 
 def _shared_head():

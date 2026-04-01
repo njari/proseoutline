@@ -45,6 +45,7 @@ def embed_notes():
         collection.upsert(
             ids=[str(note_id)],
             embeddings=[vector],
+            documents=[text],
             metadatas=[{'note_id': note_id, 'title': title}],
         )
         conn.execute('UPDATE notes SET embedded_at = ? WHERE id = ?', (int(time.time()), note_id))
@@ -52,6 +53,21 @@ def embed_notes():
         print(f"  ✓ {title}")
 
     print("Done")
+
+
+def retrieve(topic: str, k: int = 8) -> list[dict]:
+    """Query chroma for the k most relevant notes to topic. Returns list of {name, content}."""
+    collection = get_collection()
+    client = OpenAI(api_key=settings.api_key())
+
+    response = client.embeddings.create(model='text-embedding-3-small', input=topic)
+    vector = response.data[0].embedding
+
+    results = collection.query(query_embeddings=[vector], n_results=k, include=['metadatas', 'documents'])
+    notes = []
+    for meta, doc in zip(results['metadatas'][0], results['documents'][0]):
+        notes.append({'name': meta['title'], 'content': doc or ''})
+    return notes
 
 
 if __name__ == '__main__':
