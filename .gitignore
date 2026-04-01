@@ -10,7 +10,7 @@ __pycache__/
 *.py[cod]
 
 # Chroma vector store (large binary + embeddings, rebuild locally)
-graph_enrichment/chroma_db/
+graph_enrichment/chroma/
 chroma_db/
 graph_enrichment/notes.db
 
