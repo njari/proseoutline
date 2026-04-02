@@ -1,19 +1,21 @@
 from pathlib import Path
 
-from nicegui import ui, app as nicegui_app, run
+from nicegui import ui, run
 
 from generator import stream_outline, revise_outline
 from articles import (
-    OUTLINES_DIR, Article, slugify, list_articles,
+    OUTLINES_DIR, Article, slugify,
     commit_edit, init_article_repo, current_branch,
 )
 from daily import scan_notes, suggest_topics
-from graph_enrichment.clustering import get_cluster_notes
+from graph_enrichment.clustering import get_cluster_notes, get_cluster_note_ids
 from graph_enrichment.graph_data import get_graph_data
 from graph_enrichment.embeddings import retrieve
+from graph_enrichment.read_files import VAULT_DIR
+import frontmatter as _fm
 from theme import (
     PRIMARY, ACCENT, SURFACE, BG_PAGE, BG_PANEL, BORDER,
-    TEXT_BODY, TEXT_MUTED, TEXT_SUBTLE, SUCCESS, WARNING, ERROR,
+    TEXT_BODY, TEXT_MUTED, TEXT_SUBTLE, SUCCESS, ERROR,
 )
 import settings
 
@@ -108,16 +110,6 @@ def _section_article_actions() -> dict:
     }
 
 
-def _build_article_list(articles_list, load_cb, open_actions_cb):
-    """Populate the articles list. Call again to refresh."""
-    articles_list.clear()
-    with articles_list:
-        for a in list_articles(OUTLINES_DIR):
-            slug = a.slug
-            item = ui.item(slug, on_click=lambda s=slug: load_cb(s)).classes(
-                "cursor-pointer rounded-lg text-sm font-mono"
-            ).style(f"color:{PRIMARY}; transition: background 0.15s;")
-            item.on("dblclick", lambda e, s=slug: open_actions_cb(s))
 
 
 # ---------------------------------------------------------------------------
@@ -144,75 +136,42 @@ def index():
     ui.query("body").style("margin:0; padding:0;")
 
     # --- Layout skeleton ---
-    with ui.splitter(value=18).classes("w-full h-screen") as outer:
+    with ui.splitter(value=72).classes("w-full h-screen") as inner:
 
-        with outer.before:
-            with ui.column().classes("w-full h-full p-4 gap-2").style(
-                f"background:{BG_PANEL}; border-right: 1px solid {BORDER};"
+        with inner.before:
+            with ui.column().classes("w-full h-full gap-0").style(
+                f"background:{SURFACE};"
             ):
-                with ui.row().classes("w-full items-center justify-between"):
-                    ui.label("Articles").classes("text-sm font-semibold tracking-wide").style(
-                        f"color:{PRIMARY}; letter-spacing:0.06em; text-transform:uppercase;"
-                    )
+                with ui.row().classes("w-full items-center px-5 py-2 gap-3").style(
+                    f"min-height:52px; border-bottom: 1px solid {BORDER}; background:{SURFACE};"
+                ):
                     ui.button(icon="hub", on_click=lambda: ui.navigate.to(PAGE_GRAPH)).props(
                         "flat dense"
-                    ).style(f"color:{PRIMARY};").tooltip("Explore graph")
-                articles_list = ui.list().classes("w-full gap-1")
+                    ).style(f"color:{PRIMARY};").tooltip("Graph Explorer")
+                    article_label = ui.label("").classes(
+                        "text-sm font-mono flex-1 truncate"
+                    ).style(f"color:{PRIMARY};")
+                    status = ui.label("").classes("text-xs").style(
+                        f"color:{TEXT_MUTED};"
+                    )
+                    save_btn = ui.button("Save").props("dense unelevated").style(
+                        f"background:{PRIMARY}; color:{SURFACE}; padding: 4px 18px;"
+                    )
+                editor = ui.codemirror(
+                    value="", language="markdown",
+                    line_wrapping=True,
+                ).classes("w-full flex-1").style(f"background:{SURFACE};")
 
-        with outer.after:
-            with ui.splitter(value=72).classes("w-full h-full") as inner:
-
-                with inner.before:
-                    with ui.column().classes("w-full h-full gap-0").style(
-                        f"background:{SURFACE};"
-                    ):
-                        with ui.row().classes("w-full items-center px-5 py-2 gap-3").style(
-                            f"min-height:52px; border-bottom: 1px solid {BORDER}; background:{SURFACE};"
-                        ):
-                            article_label = ui.label("").classes(
-                                "text-sm font-mono flex-1 truncate"
-                            ).style(f"color:{PRIMARY};")
-                            status = ui.label("").classes("text-xs").style(
-                                f"color:{TEXT_MUTED};"
-                            )
-                            save_btn = ui.button("Save").props("dense unelevated").style(
-                                f"background:{PRIMARY}; color:{SURFACE}; padding: 4px 18px;"
-                            )
-                        editor = ui.codemirror(
-                            value="", language="markdown",
-                            line_wrapping=True,
-                        ).classes("w-full flex-1").style(f"background:{SURFACE};")
-
-                with inner.after:
-                    with ui.column().classes("w-full h-full p-5 gap-4").style(
-                        f"background:{BG_PAGE}; border-left: 1px solid {BORDER};"
-                    ):
-                        daily_w    = _section_cluster_browse()
-                        _section_divider()
-                        gen_w      = _section_generate()
-                        action_w   = _section_article_actions()
+        with inner.after:
+            with ui.column().classes("w-full h-full p-5 gap-4").style(
+                f"background:{BG_PAGE}; border-left: 1px solid {BORDER};"
+            ):
+                daily_w    = _section_cluster_browse()
+                _section_divider()
+                gen_w      = _section_generate()
+                action_w   = _section_article_actions()
 
     # --- Event handlers (close over layout widget refs) ---
-
-    async def load_article(slug: str):
-        article.slug = slug
-        article.alias = await run.io_bound(current_branch, OUTLINES_DIR, slug)
-        outline_path = OUTLINES_DIR / slug / "outline.md"
-        try:
-            content = await run.io_bound(outline_path.read_text, "utf-8")
-        except (FileNotFoundError, OSError):
-            content = ""
-        editor.value = content
-        article_label.set_text(slug)
-        status.set_text(f"Loaded {slug}")
-
-    async def open_actions(slug: str):
-        await load_article(slug)
-        action_w["feedback"].value = ""
-        action_w["root"].set_visibility(True)
-
-    def refresh_articles():
-        _build_article_list(articles_list, load_article, open_actions)
 
     async def on_save():
         if not article.slug:
@@ -238,7 +197,6 @@ def index():
         async for chunk in stream_outline(topic, docs):
             editor.value += chunk
         status.set_text("Done — edit and save when ready.")
-        refresh_articles()
 
     async def on_browse_cluster():
         algo = daily_w["algo_select"].value
@@ -289,14 +247,13 @@ def index():
     action_w["improve_btn"].on("click", on_improve)
     action_w["direction_btn"].on("click", on_new_direction)
 
-    refresh_articles()
-
 
 def _shared_head():
     ui.add_head_html(f"""
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <style>
       * {{ font-family: 'DM Sans', sans-serif !important; }}
       body {{ background: {BG_PAGE} !important; margin: 0; padding: 0; }}
@@ -404,13 +361,6 @@ def graph_explorer():
         return
 
     _shared_head()
-    ui.add_head_html("""
-    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
-    <style>
-      #graph-canvas { width: 100%; height: 100%; }
-      .vis-network:focus { outline: none; }
-    </style>
-    """)
     ui.query("body").style("margin:0; padding:0;")
 
     data = get_graph_data()
@@ -428,10 +378,64 @@ def graph_explorer():
         'cocitation':   'Co-citation',
     }
 
-    import json
-    nodes_json = json.dumps(data['nodes'])
-    edges_json = json.dumps(data['edges'])
-    colors_json = json.dumps(EDGE_COLORS)
+    active_types: set[str] = set(EDGE_COLORS.keys())
+    cluster_filter: set[str] | None = None  # set of node ids like 'n42', or None = show all
+
+    def build_option():
+        visible_ids = cluster_filter if cluster_filter is not None else {n['id'] for n in data['nodes']}
+        nodes = [
+            {
+                'name': n['id'],
+                'value': n['label'],
+                'symbolSize': 8 if n['group'] == 'tag' else 14,
+                'label': {
+                    'show': True,
+                    'formatter': n['label'][:25],
+                    'fontSize': 10,
+                    'color': '#334155',
+                },
+                'itemStyle': {
+                    'color': '#10b981' if n['group'] == 'tag' else '#bae6fd',
+                    'borderColor': '#059669' if n['group'] == 'tag' else '#1e3a8a',
+                    'borderWidth': 1.5,
+                },
+                'symbol': 'diamond' if n['group'] == 'tag' else 'circle',
+            }
+            for n in data['nodes'] if n['id'] in visible_ids
+        ]
+        links = []
+        for t in active_types:
+            color = EDGE_COLORS[t]
+            for e in data['edges'].get(t, []):
+                links.append({
+                    'source': e['from'],
+                    'target': e['to'],
+                    'lineStyle': {
+                        'color': color,
+                        'opacity': 0.5,
+                        'width': min(0.5 + e.get('value', 1) * 0.4, 4),
+                    },
+                })
+        return {
+            'backgroundColor': BG_PAGE,
+            'tooltip': {'show': True, 'formatter': '{b}'},
+            'series': [{
+                'type': 'graph',
+                'layout': 'force',
+                'roam': True,
+                'draggable': True,
+                'data': nodes,
+                'links': links,
+                'force': {
+                    'repulsion': 120,
+                    'gravity': 0.08,
+                    'edgeLength': 100,
+                    'layoutAnimation': True,
+                },
+                'emphasis': {'focus': 'adjacency'},
+                'lineStyle': {'curveness': 0.1},
+            }],
+        }
 
     with ui.row().classes("w-full h-screen gap-0"):
 
@@ -446,105 +450,92 @@ def graph_explorer():
                 f"color:{PRIMARY}; letter-spacing:0.06em; text-transform:uppercase;"
             )
             ui.separator().style(f"background:{BORDER};")
+            _section_header("Cluster")
+            with ui.row().classes("w-full gap-2 items-center"):
+                algo_sel = ui.select(
+                    options=["louvain", "kmeans", "hdbscan"], value="louvain"
+                ).props("outlined dense hide-dropdown-icon").classes("flex-1").style(
+                    f"color:{PRIMARY}; font-size:0.85rem;"
+                )
+                rank_inp = ui.number(value=1, min=1, step=1, format="%d").props(
+                    "outlined dense"
+                ).classes("w-16").style(f"color:{PRIMARY}; font-size:0.85rem;")
+            with ui.row().classes("w-full gap-2"):
+                def apply_cluster():
+                    nonlocal cluster_filter
+                    ids = get_cluster_note_ids(algo_sel.value, int(rank_inp.value or 1))
+                    cluster_filter = {f'n{i}' for i in ids}
+                    chart.options.update(build_option())
+                    chart.update()
+                def clear_cluster():
+                    nonlocal cluster_filter
+                    cluster_filter = None
+                    chart.options.update(build_option())
+                    chart.update()
+                ui.button("View", on_click=apply_cluster).props("unelevated dense").classes(
+                    "flex-1"
+                ).style(f"background:{PRIMARY}; color:{SURFACE}; font-size:0.8rem;")
+                ui.button("Clear", on_click=clear_cluster).props("unelevated dense").classes(
+                    "flex-1"
+                ).style(f"background:{BG_PANEL}; color:{PRIMARY}; border:1px solid {BORDER}; font-size:0.8rem;")
+
+            ui.separator().style(f"background:{BORDER};")
             _section_header("Enrichments")
 
             for key, label in EDGE_LABELS.items():
                 color = EDGE_COLORS[key]
+                def make_toggle(k):
+                    def toggle(e):
+                        if e.value:
+                            active_types.add(k)
+                        else:
+                            active_types.discard(k)
+                        chart.options.update(build_option())
+                        chart.update()
+                    return toggle
                 with ui.row().classes("items-center gap-2"):
-                    cb = ui.checkbox(value=True).style(f"color:{color};")
-                    ui.label(label).classes("text-sm").style(f"color:{TEXT_BODY};")
-                    cb.on('update:model-value', js_handler=f"""
-                        (v) => {{
-                            window._graphToggle('{key}', v);
-                        }}
-                    """)
+                    ui.checkbox(label, value=True, on_change=make_toggle(key)).style(
+                        f"color:{color};"
+                    )
 
-            ui.separator().style(f"background:{BORDER};")
-            _section_header("Physics")
-            physics_toggle = ui.switch("Enabled", value=True).style(f"color:{PRIMARY};")
-            physics_toggle.on('update:model-value', js_handler="""
-                (v) => { window._graphPhysics(v); }
-            """)
+        # --- Chart ---
+        chart = ui.echart(build_option()).classes("flex-1 h-full")
 
-            ui.separator().style(f"background:{BORDER};")
-            node_label = ui.label("Click a node").classes("text-xs").style(
-                f"color:{TEXT_MUTED}; word-break:break-word;"
+    # --- Note popup ---
+    with ui.dialog() as note_dialog:
+        with ui.card().classes("gap-0").style(
+            f"width:540px; max-width:90vw; max-height:80vh; background:{SURFACE};"
+        ):
+            with ui.row().classes("w-full items-center justify-between px-5 py-3").style(
+                f"border-bottom: 1px solid {BORDER};"
+            ):
+                note_title = ui.label("").classes("text-sm font-semibold flex-1 truncate").style(
+                    f"color:{PRIMARY};"
+                )
+                ui.button(icon="close", on_click=note_dialog.close).props(
+                    "flat dense"
+                ).style(f"color:{TEXT_MUTED};")
+            note_content = ui.markdown("").classes("overflow-auto p-5 text-sm").style(
+                f"color:{TEXT_BODY}; max-height:calc(80vh - 60px);"
             )
 
-        # --- Canvas ---
-        with ui.column().classes("flex-1 h-full"):
-            ui.html('<div id="graph-canvas"></div>').classes("w-full h-full")
+    async def on_node_click(e):
+        args = e.args if isinstance(e.args, dict) else {}
+        node_id = args.get('name', '')
+        title = args.get('value', '') or args.get('name', '')
+        if not node_id or not node_id.startswith('n'):
+            return
+        note_title.set_text(title)
+        note_content.set_content('_Loading…_')
+        note_dialog.open()
+        path = VAULT_DIR / (title + '.md')
+        try:
+            post = await run.io_bound(_fm.load, path)
+            note_content.set_content(post.content or '_Empty note._')
+        except Exception:
+            note_content.set_content('_Could not load note._')
 
-    ui.run_javascript(f"""
-    (function() {{
-        const allNodes = {nodes_json};
-        const allEdgesByType = {edges_json};
-        const colors = {colors_json};
-
-        let edgeId = 0;
-        let activeTypes = new Set(['links','tag_links','bib_coupling','cocitation']);
-
-        const nodeDataset = new vis.DataSet(allNodes.map(n => ({{
-            ...n,
-            color: n.group === 'tag'
-                ? {{ background:'#10b981', border:'#059669', highlight:{{background:'#34d399'}} }}
-                : {{ background:'#e0f2fe', border:'#1e3a8a', highlight:{{background:'#bae6fd'}} }},
-            font: {{ size: n.group === 'tag' ? 10 : 12, color: '#334155' }},
-            shape: n.group === 'tag' ? 'diamond' : 'dot',
-            size: n.group === 'tag' ? 8 : 12,
-        }})));
-
-        function buildEdges() {{
-            let result = [];
-            for (const [type, edges] of Object.entries(allEdgesByType)) {{
-                if (!activeTypes.has(type)) continue;
-                for (const e of edges) {{
-                    result.push({{
-                        ...e,
-                        id: edgeId++,
-                        _type: type,
-                        color: {{ color: colors[type], opacity: 0.6 }},
-                        width: e.value ? Math.min(1 + e.value * 0.5, 5) : 1,
-                        arrows: type === 'links' ? 'to' : undefined,
-                        smooth: {{ type: 'continuous' }},
-                    }});
-                }}
-            }}
-            return result;
-        }}
-
-        const edgeDataset = new vis.DataSet(buildEdges());
-
-        const container = document.getElementById('graph-canvas');
-        const network = new vis.Network(container, {{
-            nodes: nodeDataset,
-            edges: edgeDataset,
-        }}, {{
-            physics: {{ enabled: true, stabilization: {{ iterations: 150 }} }},
-            interaction: {{ hover: true, tooltipDelay: 100 }},
-        }});
-
-        network.on('click', (params) => {{
-            if (params.nodes.length) {{
-                const node = nodeDataset.get(params.nodes[0]);
-                emitEvent('node-click', node.label);
-            }}
-        }});
-
-        window._graphToggle = (type, enabled) => {{
-            if (enabled) activeTypes.add(type);
-            else activeTypes.delete(type);
-            edgeDataset.clear();
-            edgeDataset.add(buildEdges());
-        }};
-
-        window._graphPhysics = (enabled) => {{
-            network.setOptions({{ physics: {{ enabled }} }});
-        }};
-    }})();
-    """)
-
-    ui.on('node-click', lambda e: node_label.set_text(e.args))
+    chart.on('chart:click', on_node_click)
 
 
 def serve():

@@ -74,6 +74,26 @@ def cluster_kmeans(k=5):
     print(f"K-Means (k={k}): {k} clusters across {len(node_ids)} notes")
 
 
+def get_cluster_note_ids(algorithm: str, rank: int) -> set[int]:
+    """Return the set of note_ids in the rank-th largest cluster (1-indexed)."""
+    conn = get_db()
+    row = conn.execute('''
+        SELECT cluster_id FROM clusters
+        WHERE algorithm = ?
+        GROUP BY cluster_id
+        ORDER BY COUNT(*) DESC
+        LIMIT 1 OFFSET ?
+    ''', (algorithm, rank - 1)).fetchone()
+    if row is None:
+        return set()
+    cluster_id = row[0]
+    rows = conn.execute(
+        'SELECT note_id FROM clusters WHERE algorithm = ? AND cluster_id = ?',
+        (algorithm, cluster_id)
+    ).fetchall()
+    return {r[0] for r in rows}
+
+
 def get_cluster_notes(algorithm: str, rank: int) -> list[dict]:
     """Return notes in the rank-th largest cluster (1-indexed) as dicts with name + content."""
     import frontmatter as fm
