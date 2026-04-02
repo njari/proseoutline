@@ -374,15 +374,15 @@ def graph_explorer():
     EDGE_LABELS = {
         'links':        'Wikilinks',
         'tag_links':    'Tags',
-        'bib_coupling': 'Bib coupling',
-        'cocitation':   'Co-citation',
+        'bib_coupling': 'Often refer to the same things',
+        'cocitation':   'Often cited together',
     }
 
     active_types: set[str] = set(EDGE_COLORS.keys())
-    cluster_filter: set[str] | None = None  # set of node ids like 'n42', or None = show all
+
 
     def build_option():
-        visible_ids = cluster_filter if cluster_filter is not None else {n['id'] for n in data['nodes']}
+        visible_ids = {n['id'] for n in data['nodes']}
         nodes = [
             {
                 'name': n['id'],
@@ -460,24 +460,6 @@ def graph_explorer():
                 rank_inp = ui.number(value=1, min=1, step=1, format="%d").props(
                     "outlined dense"
                 ).classes("w-16").style(f"color:{PRIMARY}; font-size:0.85rem;")
-            with ui.row().classes("w-full gap-2"):
-                def apply_cluster():
-                    nonlocal cluster_filter
-                    ids = get_cluster_note_ids(algo_sel.value, int(rank_inp.value or 1))
-                    cluster_filter = {f'n{i}' for i in ids}
-                    chart.options.update(build_option())
-                    chart.update()
-                def clear_cluster():
-                    nonlocal cluster_filter
-                    cluster_filter = None
-                    chart.options.update(build_option())
-                    chart.update()
-                ui.button("View", on_click=apply_cluster).props("unelevated dense").classes(
-                    "flex-1"
-                ).style(f"background:{PRIMARY}; color:{SURFACE}; font-size:0.8rem;")
-                ui.button("Clear", on_click=clear_cluster).props("unelevated dense").classes(
-                    "flex-1"
-                ).style(f"background:{BG_PANEL}; color:{PRIMARY}; border:1px solid {BORDER}; font-size:0.8rem;")
 
             ui.separator().style(f"background:{BORDER};")
             _section_header("Enrichments")
