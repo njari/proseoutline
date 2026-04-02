@@ -3,7 +3,6 @@ import frontmatter as _fm
 from nicegui import ui, run
 
 from graph_enrichment.graph_data import get_graph_data
-from graph_enrichment.clustering import get_cluster_note_ids
 from graph_enrichment.read_files import VAULT_DIR
 import settings
 from theme import PRIMARY, SURFACE, BG_PAGE, BG_PANEL, BORDER, TEXT_BODY, TEXT_MUTED
@@ -145,7 +144,8 @@ def register(page_graph: str):
                 )
 
         async def on_node_click(e):
-            args = e.args if isinstance(e.args, dict) else {}
+
+            args = e.data if isinstance(e.data, dict) else {}
             node_id = args.get('name', '')
             title = args.get('value', '') or args.get('name', '')
             if not node_id or not node_id.startswith('n'):
