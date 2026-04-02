@@ -91,15 +91,22 @@ def register(page_graph: str):
                 }],
             }
 
+        ui.add_head_html("""
+        <style>
+          .graph-locked  { pointer-events: all; }
+          .graph-unlocked { pointer-events: none; }
+        </style>
+        """)
+
         with ui.row().classes("w-full h-screen gap-0"):
 
             # --- Sidebar ---
             with ui.column().classes("h-full p-5 gap-4 shrink-0").style(
                 f"width:220px; background:{BG_PANEL}; border-right:1px solid {BORDER};"
             ):
-                ui.button(icon="arrow_back", on_click=lambda: ui.navigate.to(PAGE_INDEX)).props(
-                    "flat dense"
-                ).style(f"color:{PRIMARY};")
+                ui.button("Back", on_click=lambda: ui.navigate.to(PAGE_INDEX)).props(
+                    "unelevated dense no-caps"
+                ).style(f"background:{BG_PANEL}; color:{PRIMARY}; border:1px solid {BORDER};")
                 ui.label("Graph Explorer").classes("text-sm font-semibold tracking-wide").style(
                     f"color:{PRIMARY}; letter-spacing:0.06em; text-transform:uppercase;"
                 )
@@ -123,7 +130,7 @@ def register(page_graph: str):
                         )
 
             # --- Chart ---
-            chart = ui.echart(build_option()).classes("flex-1 h-full")
+            chart = ui.echart(build_option()).classes("flex-1 h-full graph-locked")
 
         # --- Note popup ---
         with ui.dialog() as note_dialog:
@@ -144,12 +151,19 @@ def register(page_graph: str):
                 )
 
         async def on_node_click(e):
-
             args = e.data if isinstance(e.data, dict) else {}
             node_id = args.get('name', '')
             title = args.get('value', '') or args.get('name', '')
             if not node_id or not node_id.startswith('n'):
+                # clicked empty space — unlock scroll
+                await ui.run_javascript(
+                    "document.querySelector('.graph-locked')?.classList.replace('graph-locked','graph-unlocked')"
+                )
                 return
+            # clicked a node — lock graph interaction back
+            await ui.run_javascript(
+                "document.querySelector('.graph-unlocked')?.classList.replace('graph-unlocked','graph-locked')"
+            )
             note_title.set_text(title)
             note_content.set_content('_Loading…_')
             note_dialog.open()
