@@ -3,7 +3,7 @@ import frontmatter as _fm
 from nicegui import ui, run
 
 from graph_enrichment.graph_data import get_graph_data
-from graph_enrichment.read_files import VAULT_DIR
+from vault_management import VAULT_DIR
 import settings
 from theme import PRIMARY, SURFACE, BG_PANEL, BORDER, TEXT_BODY, TEXT_MUTED
 from .shared import (

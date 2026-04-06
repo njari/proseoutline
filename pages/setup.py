@@ -2,7 +2,7 @@ from pathlib import Path
 
 from nicegui import ui, run
 
-from daily import scan_notes
+from vault_management import scan_notes
 import settings
 from theme import PRIMARY, SURFACE, BG_PAGE, BG_PANEL, BORDER, TEXT_MUTED, SUCCESS, ERROR
 from .shared import shared_head, PAGE_SETUP

@@ -97,7 +97,7 @@ def get_cluster_note_ids(algorithm: str, rank: int) -> set[int]:
 def get_cluster_notes(algorithm: str, rank: int) -> list[dict]:
     """Return notes in the rank-th largest cluster (1-indexed) as dicts with name + content."""
     import frontmatter as fm
-    from .read_files import VAULT_DIR
+    from vault_management import VAULT_DIR
 
     conn = get_db()
     row = conn.execute('''

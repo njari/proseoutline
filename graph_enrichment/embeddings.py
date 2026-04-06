@@ -7,7 +7,7 @@ from openai import OpenAI
 import settings
 from .dbconn import get_db
 from .note import NoteType
-from .read_files import VAULT_DIR, add_files_to_table
+from vault_management import VAULT_DIR, add_files_to_table
 
 CHROMA_PATH = Path(__file__).parent / 'chroma'
 COLLECTION  = 'notes'

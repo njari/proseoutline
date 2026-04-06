@@ -138,7 +138,7 @@ def render_graph_panel(height_class: str = "h-64") -> dict:
     Returns {'set_data': fn} — call set_data(data_dict) to update the displayed graph.
     """
     import frontmatter as fm
-    from graph_enrichment.read_files import VAULT_DIR
+    from vault_management import VAULT_DIR
 
     _state = {
         'data': {'nodes': [], 'edges': {}},

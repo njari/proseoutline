@@ -5,7 +5,7 @@ import hdbscan
 import frontmatter as fm
 
 from .dbconn import get_db
-from .read_files import VAULT_DIR
+from vault_management import VAULT_DIR
 
 
 def _get_recent_note_ids(days: int = 7) -> set[int]:
