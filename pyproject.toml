@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "proseoutline"
-version = "0.2.0"
+version = "0.2.1"
 description = "Explore how your notes connect to each other and surface real-time clusters from your Obsidian vault."
 readme = "README.md"
 license = { text = "MIT" }
@@ -23,7 +23,7 @@ dependencies = [
 ]
 
 [project.scripts]
-minirag = "app:serve"
+proseoutline = "app:serve"
 
 [tool.setuptools.packages.find]
 where = ["."]
