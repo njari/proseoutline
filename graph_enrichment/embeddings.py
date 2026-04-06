@@ -58,6 +58,10 @@ def embed_notes():
         conn.commit()
         print(f"  ✓ {title}")
 
+    from .realtimeclustering import CACHE_PATH
+    import datetime
+    CACHE_PATH.unlink(missing_ok=True)
+    settings.set_last_sync_at(datetime.datetime.now().strftime("%d %b %Y, %H:%M"))
     print("Done")
 
 

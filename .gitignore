@@ -13,9 +13,11 @@ __pycache__/
 graph_enrichment/chroma/
 chroma_db/
 graph_enrichment/notes.db
+graph_enrichment/cluster_cache.json
 
 # HuggingFace model cache (downloaded automatically)
 .cache/
+
 
 # Article outlines — each has its own git repo, exclude from outer repo
 outlines/

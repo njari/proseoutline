@@ -3,7 +3,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "minirag"
+name = "proseoutline"
 version = "0.2.0"
 description = "Explore how your notes connect to each other and surface real-time clusters from your Obsidian vault."
 readme = "README.md"

@@ -13,6 +13,7 @@ from dotenv import load_dotenv, set_key
 _ENV_PATH = Path(__file__).parent / ".env"
 _KEY_VAULT_DIR = "DOCS_DIR"
 _KEY_API_KEY = "OPENAI_API_KEY"
+_KEY_LAST_SYNC = "LAST_SYNC_AT"
 
 load_dotenv()
 
@@ -27,6 +28,16 @@ def api_key() -> str:
 
 def is_configured() -> bool:
     return bool(vault_dir()) and bool(api_key())
+
+
+def last_sync_at() -> str:
+    return os.getenv(_KEY_LAST_SYNC, "")
+
+
+def set_last_sync_at(value: str) -> None:
+    _ENV_PATH.touch()
+    set_key(str(_ENV_PATH), _KEY_LAST_SYNC, value)
+    os.environ[_KEY_LAST_SYNC] = value
 
 
 def save(vault_path: str, openai_api_key: str) -> None:

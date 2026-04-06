@@ -1,4 +1,7 @@
+import json
 import time
+from pathlib import Path
+
 import numpy as np
 import umap
 import hdbscan
@@ -6,6 +9,22 @@ import frontmatter as fm
 
 from .dbconn import get_db
 from vault_management import VAULT_DIR
+
+CACHE_PATH = Path(__file__).parent / 'cluster_cache.json'
+
+
+def _load_cache() -> list[list[dict]] | None:
+    try:
+        return json.loads(CACHE_PATH.read_text())
+    except Exception:
+        return None
+
+
+def _save_cache(clusters: list[list[dict]]) -> None:
+    try:
+        CACHE_PATH.write_text(json.dumps(clusters))
+    except Exception:
+        pass
 
 
 def _get_recent_note_ids(days: int = 7) -> set[int]:
@@ -73,6 +92,10 @@ def cluster_realtime(
 
     Returns [] if there is not enough data to cluster.
     """
+    cached = _load_cache()
+    if cached is not None:
+        return cached
+
     from .embeddings import get_collection
 
     conn = get_db()
@@ -128,4 +151,5 @@ def cluster_realtime(
         if notes:
             result_clusters.append(notes)
 
+    _save_cache(result_clusters)
     return result_clusters

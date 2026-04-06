@@ -63,14 +63,23 @@ def register(page_index: str):
                     embed_spinner = ui.spinner("dots", size="sm").style(f"color:{ACCENT};")
                     embed_spinner.set_visibility(False)
 
+                    def _sync_tooltip() -> str:
+                        ts = settings.last_sync_at()
+                        return f"Last sync: {ts}" if ts else "Last sync: never"
+
+                    sync_btn = ui.button(on_click=lambda: None).props(
+                        "flat round dense icon=sync"
+                    ).style(f"color:{PRIMARY}; font-size:1.3rem;")
+                    sync_btn.tooltip(_sync_tooltip())
+
                     async def on_embed():
                         embed_spinner.set_visibility(True)
                         await run.io_bound(sync_and_embed)
                         embed_spinner.set_visibility(False)
+                        sync_btn.props(f"flat round dense icon=sync")
+                        sync_btn.tooltip(_sync_tooltip())
 
-                    ui.button(on_click=on_embed).props(
-                        "flat round dense icon=sync"
-                    ).style(f"color:{PRIMARY}; font-size:1.3rem;").tooltip("Re-embed notes")
+                    sync_btn.on("click", on_embed)
 
             # ── Bottom bar ────────────────────────────────────────────────────
             with ui.row().classes("w-full items-center px-6 gap-4 shrink-0").style(
