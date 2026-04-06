@@ -7,7 +7,7 @@ from openai import OpenAI
 import settings
 from .dbconn import get_db
 from .note import NoteType
-from .read_files import VAULT_DIR
+from .read_files import VAULT_DIR, add_files_to_table
 
 CHROMA_PATH = Path(__file__).parent / 'chroma'
 COLLECTION  = 'notes'
@@ -16,6 +16,12 @@ COLLECTION  = 'notes'
 def get_collection():
     client = chromadb.PersistentClient(path=str(CHROMA_PATH))
     return client.get_or_create_collection(COLLECTION)
+
+
+def sync_and_embed():
+    """Scan vault for new/updated notes, add them to the DB, then embed any that are stale."""
+    add_files_to_table()
+    embed_notes()
 
 
 def embed_notes():

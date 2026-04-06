@@ -5,21 +5,11 @@ from nicegui import ui, run
 from graph_enrichment.graph_data import get_graph_data
 from graph_enrichment.read_files import VAULT_DIR
 import settings
-from theme import PRIMARY, SURFACE, BG_PAGE, BG_PANEL, BORDER, TEXT_BODY, TEXT_MUTED
-from .shared import shared_head, section_header, PAGE_INDEX, PAGE_SETUP
-
-EDGE_COLORS = {
-    'links':        '#6366f1',
-    'tag_links':    '#10b981',
-    'bib_coupling': '#f59e0b',
-    'cocitation':   '#ef4444',
-}
-EDGE_LABELS = {
-    'links':        'Wikilinks',
-    'tag_links':    'Tags',
-    'bib_coupling': 'Often refer to the same things',
-    'cocitation':   'Often cited together',
-}
+from theme import PRIMARY, SURFACE, BG_PANEL, BORDER, TEXT_BODY, TEXT_MUTED
+from .shared import (
+    shared_head, section_header, PAGE_INDEX, PAGE_SETUP,
+    EDGE_COLORS, EDGE_LABELS, build_echart_option,
+)
 
 
 def register(page_graph: str):
@@ -34,62 +24,9 @@ def register(page_graph: str):
 
         data = get_graph_data()
         active_types: set[str] = set(EDGE_COLORS.keys())
+
         def build_option():
-            visible_ids =  {n['id'] for n in data['nodes']}
-            nodes = [
-                {
-                    'name': n['id'],
-                    'value': n['label'],
-                    'symbolSize': 8 if n['group'] == 'tag' else 14,
-                    'label': {
-                        'show': True,
-                        'formatter': n['label'][:25],
-                        'fontSize': 10,
-                        'color': '#334155',
-                    },
-                    'itemStyle': {
-                        'color': '#10b981' if n['group'] == 'tag' else '#bae6fd',
-                        'borderColor': '#059669' if n['group'] == 'tag' else '#1e3a8a',
-                        'borderWidth': 1.5,
-                    },
-                    'symbol': 'diamond' if n['group'] == 'tag' else 'circle',
-                }
-                for n in data['nodes'] if n['id'] in visible_ids
-            ]
-            links = []
-            for t in active_types:
-                color = EDGE_COLORS[t]
-                for e in data['edges'].get(t, []):
-                    if e['from'] in visible_ids and e['to'] in visible_ids:
-                        links.append({
-                            'source': e['from'],
-                            'target': e['to'],
-                            'lineStyle': {
-                                'color': color,
-                                'opacity': 0.5,
-                                'width': min(0.5 + e.get('value', 1) * 0.4, 4),
-                            },
-                        })
-            return {
-                'backgroundColor': BG_PAGE,
-                'tooltip': {'show': True, 'formatter': '{b}'},
-                'series': [{
-                    'type': 'graph',
-                    'layout': 'force',
-                    'roam': True,
-                    'draggable': True,
-                    'data': nodes,
-                    'links': links,
-                    'force': {
-                        'repulsion': 120,
-                        'gravity': 0.08,
-                        'edgeLength': 100,
-                        'layoutAnimation': True,
-                    },
-                    'emphasis': {'focus': 'adjacency'},
-                    'lineStyle': {'curveness': 0.1},
-                }],
-            }
+            return build_echart_option(data, active_types)
 
         ui.add_head_html("""
         <style>
@@ -155,12 +92,10 @@ def register(page_graph: str):
             node_id = args.get('name', '')
             title = args.get('value', '') or args.get('name', '')
             if not node_id or not node_id.startswith('n'):
-                # clicked empty space — unlock scroll
                 await ui.run_javascript(
                     "document.querySelector('.graph-locked')?.classList.replace('graph-locked','graph-unlocked')"
                 )
                 return
-            # clicked a node — lock graph interaction back
             await ui.run_javascript(
                 "document.querySelector('.graph-unlocked')?.classList.replace('graph-unlocked','graph-locked')"
             )
