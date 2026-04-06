@@ -11,7 +11,7 @@ pages.graph.register(PAGE_GRAPH)
 
 
 def serve():
-    ui.run(title="ProseOutline", port=8080, reload=True)
+    ui.run(title="ProseOutline", port=8080, reload=False)
 
 
 if __name__ in {"__main__", "__mp_main__"}:

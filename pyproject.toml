@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "proseoutline"
-version = "0.2.2"
+version = "0.2.3"
 description = "Explore how your notes connect to each other and surface real-time clusters from your Obsidian vault."
 readme = "README.md"
 license = { text = "MIT" }
